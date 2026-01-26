@@ -50,39 +50,56 @@ class _DetailsScreenState extends State<DetailsScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Text(
-                    'Episodes',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'episodes',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: _episodes.length,
-                    itemBuilder: (context, index) {
-                      final ep = _episodes[index];
-                      return ListTile(
-                        title: Text('Episode ${ep.number}'),
-                        trailing: const Icon(Icons.play_arrow),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => PlayerScreen(
-                                animeId: widget.anime.url,
-                                episode: ep,
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_episodes.length} episodes available',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: _episodes.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final ep = _episodes[index];
+                        return ListTile(
+                          title: Text(
+                            'episode ${ep.number}',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          trailing: const Icon(Icons.play_arrow_rounded),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PlayerScreen(
+                                  animeId: widget.anime.url,
+                                  episode: ep,
+                                  animeTitle: widget.anime.title,
+                                  allEpisodes: _episodes,
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      );
-                    },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }

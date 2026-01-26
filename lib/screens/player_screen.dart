@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:anigen/models/anime.dart';
@@ -7,8 +8,16 @@ import 'package:anigen/providers/anime_provider.dart';
 class PlayerScreen extends StatefulWidget {
   final String animeId;
   final Episode episode;
+  final String animeTitle;
+  final List<Episode> allEpisodes;
 
-  const PlayerScreen({super.key, required this.animeId, required this.episode});
+  const PlayerScreen({
+    super.key,
+    required this.animeId,
+    required this.episode,
+    required this.animeTitle,
+    required this.allEpisodes,
+  });
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -24,6 +33,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    
     player = Player();
     controller = VideoController(player);
 
@@ -89,30 +99,155 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Episode ${widget.episode.number}')),
-      body: Center(
-        child: _isLoading
-            ? const CircularProgressIndicator()
-            : _error != null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _isLoading = true;
-                        _error = null;
-                      });
-                      _fetchStream();
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
-              )
-            : Video(controller: controller),
+      appBar: AppBar(
+        title: Text(widget.animeTitle),
       ),
+      body: SafeArea(
+        bottom: false,
+        child: ClipRect(
+          child: Column(
+            children: [
+          // Video player at the top
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Container(
+              color: Colors.black,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              const SizedBox(height: 16),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                child: Text(
+                                  _error!,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _isLoading = true;
+                                    _error = null;
+                                  });
+                                  _fetchStream();
+                                },
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text('retry'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : MaterialVideoControlsTheme(
+                          normal: const MaterialVideoControlsThemeData(),
+                          fullscreen: MaterialVideoControlsThemeData(
+                            topButtonBar: [
+                              MaterialDesktopCustomButton(
+                                icon: const Icon(Icons.arrow_back),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                            ],
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 32,
+                            ),
+                          ),
+                          child: Video(controller: controller),
+                        ),
+            ),
+          ),
+          
+          // Episode info
+          Container(
+            width: double.infinity,
+            color: Theme.of(context).scaffoldBackgroundColor,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'episode ${widget.episode.number}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.animeTitle,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          
+          const Divider(height: 1),
+          
+          const SizedBox(height: 8),
+          
+          // Episodes list
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              itemCount: widget.allEpisodes.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final ep = widget.allEpisodes[index];
+                final isCurrentEpisode = ep.number == widget.episode.number;
+                
+                return ListTile(
+                  selected: isCurrentEpisode,
+                  selectedTileColor: Theme.of(context).colorScheme.surfaceContainer,
+                  title: Text(
+                    'episode ${ep.number}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: isCurrentEpisode 
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                          fontWeight: isCurrentEpisode ? FontWeight.w600 : null,
+                        ),
+                  ),
+                  trailing: Icon(
+                    isCurrentEpisode ? Icons.play_circle : Icons.play_arrow_rounded,
+                    color: isCurrentEpisode 
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                  onTap: isCurrentEpisode ? null : () {
+                    // Replace current screen with new episode
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PlayerScreen(
+                          animeId: widget.animeId,
+                          episode: ep,
+                          animeTitle: widget.animeTitle,
+                          allEpisodes: widget.allEpisodes,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+        ),
+        ),
     );
   }
 }

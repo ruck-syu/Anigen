@@ -140,8 +140,10 @@ class AnimeProvider {
       // 3) S-mp4
       // 4) Luf-Mp4
       final allowedProviders = ['Default', 'S-mp4', 'Luf-Mp4', 'Yt-mp4'];
+      final skipDomains = ['fast4speed', 'fastani']; // Known problematic sources
 
       Map<String, String>? fallbackResult;
+      Map<String, String>? problematicResult;
 
       for (var source in sourceUrls) {
         String? sourceName = source['sourceName'];
@@ -157,15 +159,28 @@ class AnimeProvider {
         }
 
         if (sourceUrl != null && sourceUrl.startsWith('http')) {
+          // Check if URL contains problematic domains
+          bool isProblematic = skipDomains.any((domain) => sourceUrl!.contains(domain));
+          
           if (sourceUrl.contains('repackager.wixmp.com')) {
             // ani-cli logic: sed 's|repackager.wixmp.com/||g;s|\.urlset.*||g'
             // This effectively extracts the underlying direct link
             String processed = sourceUrl
                 .replaceAll('repackager.wixmp.com/', '')
                 .replaceAll(RegExp(r'\.urlset.*'), '');
-            return {"url": processed};
+            
+            if (isProblematic) {
+              problematicResult = {"url": _cleanUrl(processed)};
+              continue;
+            }
+            return {"url": _cleanUrl(processed)};
           }
-          return {"url": sourceUrl};
+          
+          if (isProblematic) {
+            problematicResult = {"url": _cleanUrl(sourceUrl)};
+            continue;
+          }
+          return {"url": _cleanUrl(sourceUrl)};
         }
 
         if (sourceUrl != null) {
@@ -196,14 +211,16 @@ class AnimeProvider {
                 for (var linkObj in links) {
                   if (linkObj['link'] != null &&
                       linkObj['link'].toString().startsWith('http')) {
-                    String resolved = await _resolveUrl(linkObj['link']);
+                    String rawUrl = linkObj['link'].toString().trim();
+                    String resolved = await _resolveUrl(rawUrl);
                     currentResult = {"url": resolved};
                     break;
                   }
                   if (linkObj['hls'] != null &&
                       linkObj['hls'] is Map &&
                       linkObj['hls']['url'] != null) {
-                    String resolved = await _resolveUrl(linkObj['hls']['url']);
+                    String rawUrl = linkObj['hls']['url'].toString().trim();
+                    String resolved = await _resolveUrl(rawUrl);
                     currentResult = {"url": resolved};
                     break;
                   }
@@ -214,18 +231,31 @@ class AnimeProvider {
                   streamData['hls'] != null &&
                   streamData['hls'] is Map &&
                   streamData['hls']['url'] != null) {
-                String resolved = await _resolveUrl(streamData['hls']['url']);
+                String rawUrl = streamData['hls']['url'].toString().trim();
+                String resolved = await _resolveUrl(rawUrl);
                 currentResult = {"url": resolved};
               }
 
               if (currentResult != null) {
+                // Check if this is a problematic domain
+                bool isProblematic = skipDomains.any((domain) => 
+                  currentResult!['url']?.contains(domain) ?? false);
+                
                 if (extractedReferer != null) {
                   currentResult["referer"] = extractedReferer;
                   // Found a valid link but it needs referer. Keep as fallback.
-                  fallbackResult ??= currentResult;
+                  if (isProblematic) {
+                    problematicResult ??= currentResult;
+                  } else {
+                    fallbackResult ??= currentResult;
+                  }
                 } else {
-                  // Found a clean link without referer! Return immediately.
-                  return currentResult;
+                  // Found a clean link without referer!
+                  if (isProblematic) {
+                    problematicResult ??= currentResult;
+                  } else {
+                    return currentResult;
+                  }
                 }
               }
             }
@@ -236,8 +266,13 @@ class AnimeProvider {
         }
       }
 
-      // If we finished the loop and didn't find a clean link, return the fallback (referrer-required) link if we found one.
-      return fallbackResult;
+      // Priority order: clean link > fallback with referer > problematic source as last resort
+      if (fallbackResult != null) {
+        return fallbackResult;
+      }
+      
+      // Only use problematic sources if nothing else is available
+      return problematicResult;
     } else {
       throw Exception('Failed to get stream link');
     }
@@ -247,7 +282,7 @@ class AnimeProvider {
     // Optimization: If it looks like a direct link and not a known redirector, return it.
     if ((url.endsWith('.mp4') || url.endsWith('.m3u8')) &&
         !url.contains('uns.bio')) {
-      return url;
+      return _cleanUrl(url);
     }
 
     String currentUrl = url;
@@ -267,26 +302,54 @@ class AnimeProvider {
         if (response.statusCode >= 300 && response.statusCode < 400) {
           final location = response.headers['location'];
           if (location != null) {
-            if (location.startsWith('/')) {
-              currentUrl = uri.resolve(location).toString();
+            // Clean up the location URL
+            String cleanLocation = location.trim();
+            
+            if (cleanLocation.startsWith('/')) {
+              currentUrl = uri.resolve(cleanLocation).toString();
             } else {
-              currentUrl = location;
+              currentUrl = cleanLocation;
             }
+            
+            // Normalize the URL
+            currentUrl = _cleanUrl(currentUrl);
             redirectCount++;
             continue;
           }
         }
 
         // If it's a 200 OK or we stopped redirecting, this is likely the final URL.
-        // However, we should check if the final URL is actually different.
-        return currentUrl;
+        return _cleanUrl(currentUrl);
       }
     } catch (e) {
-      return currentUrl;
+      return _cleanUrl(currentUrl);
     } finally {
       client.close();
     }
-    return currentUrl;
+    return _cleanUrl(currentUrl);
+  }
+
+  String _cleanUrl(String url) {
+    // Trim whitespace
+    url = url.trim();
+    
+    // Remove all whitespace characters (spaces, tabs, newlines)
+    url = url.replaceAll(RegExp(r'\s+'), '');
+    
+    // Fix double slashes (but keep protocol://)
+    if (url.contains('://')) {
+      final parts = url.split('://');
+      if (parts.length == 2) {
+        final protocol = parts[0];
+        final rest = parts[1].replaceAll(RegExp(r'/+'), '/');
+        url = '$protocol://$rest';
+      }
+    }
+    
+    // Debug output
+    print('Cleaned URL: $url');
+    
+    return url;
   }
 
   String _decodeSourceUrl(String input) {
