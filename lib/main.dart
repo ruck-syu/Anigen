@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:anigen/screens/home_screen.dart';
@@ -6,6 +7,15 @@ import 'package:anigen/screens/home_screen.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  
+  // Set system navigation bar color
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Color(0xFF1e1e2e), // Catppuccin Mocha base
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
+  
   runApp(const AnigenApp());
 }
 
