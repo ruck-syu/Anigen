@@ -29,6 +29,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   bool _isLoading = true;
   String? _error;
+  double _playbackSpeed = 1.0;
 
   @override
   void initState() {
@@ -96,6 +97,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  void _showSpeedDialog() {
+    final speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('playback speed'),
+        content: SizedBox(
+          width: double.minPositive,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: speeds.length,
+            itemBuilder: (context, index) {
+              final speed = speeds[index];
+              return RadioListTile<double>(
+                tileColor: Colors.transparent,
+                title: Text('${speed}x'),
+                value: speed,
+                groupValue: _playbackSpeed,
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _playbackSpeed = value;
+                    });
+                    player.setRate(value);
+                    Navigator.pop(context);
+                  }
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,64 +147,117 @@ class _PlayerScreenState extends State<PlayerScreen> {
           // Video player at the top
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: Container(
-              color: Colors.black,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.error_outline,
-                                size: 48,
-                                color: Theme.of(context).colorScheme.error,
+            child: Stack(
+              children: [
+                Container(
+                  color: Colors.black,
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 48,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    child: Text(
+                                      _error!,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.error,
+                                          ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      setState(() {
+                                        _isLoading = true;
+                                        _error = null;
+                                      });
+                                      _fetchStream();
+                                    },
+                                    icon: const Icon(Icons.refresh, size: 18),
+                                    label: const Text('retry'),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 16),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                child: Text(
-                                  _error!,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(context).colorScheme.error,
-                                      ),
-                                  textAlign: TextAlign.center,
+                            )
+                          : MaterialVideoControlsTheme(
+                              normal: MaterialVideoControlsThemeData(
+                                primaryButtonBar: [
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.replay_10),
+                                    onPressed: () {
+                                      final currentPos = player.state.position;
+                                      player.seek(currentPos - const Duration(seconds: 10));
+                                    },
+                                  ),
+                                  const MaterialPlayOrPauseButton(),
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.forward_10),
+                                    onPressed: () {
+                                      final currentPos = player.state.position;
+                                      player.seek(currentPos + const Duration(seconds: 10));
+                                    },
+                                  ),
+                                ],
+                                topButtonBar: [
+                                  const Spacer(),
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.speed),
+                                    onPressed: () => _showSpeedDialog(),
+                                  ),
+                                ],
+                              ),
+                              fullscreen: MaterialVideoControlsThemeData(
+                                primaryButtonBar: [
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.replay_10),
+                                    onPressed: () {
+                                      final currentPos = player.state.position;
+                                      player.seek(currentPos - const Duration(seconds: 10));
+                                    },
+                                  ),
+                                  const MaterialPlayOrPauseButton(),
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.forward_10),
+                                    onPressed: () {
+                                      final currentPos = player.state.position;
+                                      player.seek(currentPos + const Duration(seconds: 10));
+                                    },
+                                  ),
+                                ],
+                                topButtonBar: [
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.arrow_back),
+                                    onPressed: () => Navigator.pop(context),
+                                  ),
+                                  const Spacer(),
+                                  MaterialDesktopCustomButton(
+                                    icon: const Icon(Icons.speed),
+                                    onPressed: () => _showSpeedDialog(),
+                                  ),
+                                ],
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 32,
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _isLoading = true;
-                                    _error = null;
-                                  });
-                                  _fetchStream();
-                                },
-                                icon: const Icon(Icons.refresh, size: 18),
-                                label: const Text('retry'),
-                              ),
-                            ],
-                          ),
-                        )
-                      : MaterialVideoControlsTheme(
-                          normal: const MaterialVideoControlsThemeData(),
-                          fullscreen: MaterialVideoControlsThemeData(
-                            topButtonBar: [
-                              MaterialDesktopCustomButton(
-                                icon: const Icon(Icons.arrow_back),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                            ],
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 32,
+                              child: Video(controller: controller),
                             ),
-                          ),
-                          child: Video(controller: controller),
-                        ),
+                ),
+              ],
             ),
           ),
+          
+          const SizedBox(height: 8),
           
           // Episode info
           Container(

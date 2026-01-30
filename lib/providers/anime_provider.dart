@@ -13,7 +13,7 @@ class AnimeProvider {
     const String searchGql = r'''
       query( $search: SearchInput $limit: Int $page: Int $translationType: VaildTranslationTypeEnumType $countryOrigin: VaildCountryOriginEnumType ) {
         shows( search: $search limit: $limit page: $page translationType: $translationType countryOrigin: $countryOrigin ) {
-          edges { _id name availableEpisodes __typename }
+          edges { _id name thumbnail availableEpisodes __typename }
         }
       }
     ''';
@@ -45,6 +45,7 @@ class AnimeProvider {
         return Anime(
           title: edge['name'],
           url: edge['_id'], // Using ID as the identifier
+          thumbnail: edge['thumbnail'],
         );
       }).toList();
     } else {
