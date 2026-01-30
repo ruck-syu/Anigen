@@ -12,28 +12,59 @@
 
 ## ✨ Features
 
-- 🔍 **Powerful Search**: Find any anime title instantly using the AllAnime database.
-- 📺 **Built-in High Performance Player**: Stream content directly within the app using a highly optimized internal player based on **MPV**.
-- 🚀 **Optimized Scrapers**: Ported logic from `ani-cli` to ensure fast and reliable stream extraction.
-- 🛡️ **Ad-Free Experience**: No pop-ups, no redirects—just your anime.
-- 📱 **Clean UI**: A focused interface designed for speed and ease of use.
+- 🔍 **Powerful Search**: Find any anime title instantly using the AllAnime database with auto-search
+- 📺 **Built-in High Performance Player**: Stream content directly within the app using a highly optimized internal player based on **MPV**
+- 🚀 **Optimized Scrapers**: Ported logic from `ani-cli` to ensure fast and reliable stream extraction
+- 🛡️ **Ad-Free Experience**: No pop-ups, no redirects—just your anime
+- 🎨 **Clean UI**: Beautiful Catppuccin Mocha theme with gradient accents
+- 📱 **Home Feed**: Discover top anime, popular titles, current season, and upcoming releases
+- 🏷️ **Genre Browsing**: Explore anime by categories with top 50 anime per genre
+- ℹ️ **Detailed Info**: View comprehensive anime information from MyAnimeList
+- 📜 **Recent Anime**: Quick access to your recently watched anime with thumbnails
+- 🎬 **Custom Video Controls**: Intuitive player with speed control, quality selection, and progress tracking
 
 ---
 
 ## 📖 Usage
 
-1. **Search**: Enter the name of the anime you want to watch in the search bar.
-2. **Select**: Choose your anime from the search results.
-3. **Episode**: Pick the episode you want to view.
-4. **Enjoy**: The internal player will handle the stream automatically with zero ads.
+### Home Screen
+- Browse curated lists: **Top Anime** and **Popular**
+- Check out **Current Season** and **Upcoming** anime
+- Explore anime by **Genre Categories** (16 handpicked genres)
+- Tap any anime to view detailed information
+
+### Search
+- Type to instantly search with auto-complete
+- View recent anime with thumbnails
+- Select anime to see episodes
+
+### Player
+- Tap to show/hide controls
+- Double tap left/right to skip ±10 seconds
+- Adjust playback speed (0.5x to 2x)
+- Change video quality on-the-fly
+- Resume from where you left off
+
+---
+
+## 🛠️ Technical Stack
+
+- **Flutter 3.10.7** with Dart
+- **media_kit** for MPV-based video playback
+- **Jikan API** for MyAnimeList data integration
+- **AllAnime GraphQL API** for streaming links
+- **shared_preferences** for local data persistence
+- **Catppuccin Mocha** color scheme with JetBrains Mono font
 
 ---
 
 ## 🤝 Credits
 
-- **[ani-cli](https://github.com/pystardust/ani-cli)**: For the inspiration and the robust scraping logic.
-- **[AllAnime](https://allanime.day)**: For the comprehensive anime database and streaming links.
-- **[media_kit](https://github.com/alexmercerind/media_kit)**: For the high-performance MPV-based playback engine.
+- **[ani-cli](https://github.com/pystardust/ani-cli)**: For the inspiration and the robust scraping logic
+- **[AllAnime](https://allanime.day)**: For the comprehensive anime database and streaming links
+- **[Jikan API](https://jikan.moe/)**: For MyAnimeList data integration
+- **[media_kit](https://github.com/alexmercerind/media_kit)**: For the high-performance MPV-based playback engine
+- **[Catppuccin](https://github.com/catppuccin/catppuccin)**: For the beautiful color scheme
 
 ---
 
