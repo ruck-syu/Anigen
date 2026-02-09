@@ -1,5 +1,5 @@
 #define MyAppName "Anigen"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.5"
 #define MyAppExeName "anigen.exe"
 
 [Setup]
