@@ -23,12 +23,46 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
-      - name: Build exe
+      - name: Build Windows
         run: flutter build windows
 
-      - name: Upload artifact
+      # Install Inno Setup
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      # Create installer script
+      - name: Create installer script
+        shell: powershell
+        run: |
+          @"
+          #define MyAppName "YourApp"
+          #define MyAppVersion "1.0"
+          #define MyAppPublisher "You"
+          #define MyAppExeName "your_app.exe"
+
+          [Setup]
+          AppId={{A1234567-89AB-CDEF-0123-456789ABCDEF}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          DefaultDirName={autopf}\{#MyAppName}
+          OutputDir=installer
+          OutputBaseFilename=Setup
+
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
+
+          [Icons]
+          Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+          "@ > installer.iss
+
+      # Build installer
+      - name: Build installer
+        run: iscc installer.iss
+
+      # Upload setup.exe
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: build/windows/x64/runner/Release
+          name: Setup
+          path: installer/Setup.exe
 
