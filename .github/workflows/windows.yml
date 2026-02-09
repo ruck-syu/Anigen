@@ -1,8 +1,7 @@
-name: Windows Installer Build
+name: Build Windows Setup
 
 on:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,67 +11,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
 
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
 
-      - name: Get Dependencies
+      - name: Get packages
         run: flutter pub get
 
       - name: Build Windows App
         run: flutter build windows
 
-      # Download VC++ runtime (fix missing DLL errors)
-      - name: Download VC++ Runtime
-        run: curl -L -o vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
-
       # Install Inno Setup
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # Create installer script safely (literal string)
-      - name: Create Installer Script
-        shell: powershell
+      # Create installer.iss using CMD (no encoding problems)
+      - name: Create ISS file
+        shell: cmd
         run: |
-          $script = @'
-#define MyAppName "MyFlutterApp"
-#define MyAppVersion "1.0"
-#define MyAppExeName "your_app.exe"
-
-[Setup]
-AppId={{B1B6A1C8-8C0D-4E7A-A111-123456789ABC}
-AppName={#MyAppName}
-AppVersion={#MyAppVersion}
-DefaultDirName={autopf}\{#MyAppName}
-DefaultGroupName={#MyAppName}
-OutputDir=installer
-OutputBaseFilename=Setup
-Compression=lzma
-SolidCompression=yes
-
-[Files]
-Source: "build\windows\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
-Source: "vc_redist.x64.exe"; DestDir: "{tmp}"
-
-[Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-
-[Run]
-Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /passive /norestart"; Flags: waituntilterminated
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
-'@
-
-          $script | Out-File installer.iss -Encoding ascii
+          (
+          echo [Setup]
+          echo AppName=MyFlutterApp
+          echo AppVersion=1.0
+          echo DefaultDirName={autopf}\MyFlutterApp
+          echo OutputDir=installer
+          echo OutputBaseFilename=Setup
+          echo.
+          echo [Files]
+          echo Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
+          echo.
+          echo [Icons]
+          echo Name: "{group}\MyFlutterApp"; Filename: "{app}\your_app.exe"
+          ) > installer.iss
 
       - name: Build Installer
         run: iscc installer.iss
 
-      - name: Upload Installer
+      - name: Upload Setup
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-Installer
+          name: setup
           path: installer/Setup.exe
+
