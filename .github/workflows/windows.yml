@@ -39,9 +39,9 @@ jobs:
         shell: powershell
         run: |
           $script = @"
-#define MyAppName "MyFlutterApp"
+#define MyAppName "Anigen"
 #define MyAppVersion "1.0"
-#define MyAppExeName "your_app.exe"
+#define MyAppExeName "anigen.exe"
 
 [Setup]
 AppId={{B1B6A1C8-8C0D-4E7A-A111-123456789ABC}
