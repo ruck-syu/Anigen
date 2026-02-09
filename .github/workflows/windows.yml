@@ -1,68 +1,36 @@
-name: Windows Build
+name: Windows Installer Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
 
-      - name: Enable Windows
-        run: flutter config --enable-windows-desktop
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - run: flutter build windows
 
-      - name: Get packages
-        run: flutter pub get
+      - name: Download VC++ Runtime
+        run: curl -L -o vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
 
-      - name: Build Windows
-        run: flutter build windows
-
-      # Install Inno Setup
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # Create installer script
-      - name: Create installer script
-        shell: powershell
-        run: |
-          @"
-          #define MyAppName "YourApp"
-          #define MyAppVersion "1.0"
-          #define MyAppPublisher "You"
-          #define MyAppExeName "your_app.exe"
-
-          [Setup]
-          AppId={{A1234567-89AB-CDEF-0123-456789ABCDEF}
-          AppName={#MyAppName}
-          AppVersion={#MyAppVersion}
-          DefaultDirName={autopf}\{#MyAppName}
-          OutputDir=installer
-          OutputBaseFilename=Setup
-
-          [Files]
-          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
-
-          [Icons]
-          Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-          "@ > installer.iss
-
-      # Build installer
-      - name: Build installer
+      - name: Build Installer
         run: iscc installer.iss
 
-      # Upload setup.exe
-      - name: Upload Installer
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Setup
+          name: Windows-Installer
           path: installer/Setup.exe
 
