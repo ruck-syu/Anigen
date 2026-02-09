@@ -9,28 +9,70 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
 
-      - run: flutter config --enable-windows-desktop
-      - run: flutter pub get
-      - run: flutter build windows
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
 
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build Windows App
+        run: flutter build windows
+
+      # Download VC++ runtime (fix missing DLL errors)
       - name: Download VC++ Runtime
         run: curl -L -o vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
 
+      # Install Inno Setup
       - name: Install Inno Setup
         run: choco install innosetup -y
+
+      # Create installer script safely (literal string)
+      - name: Create Installer Script
+        shell: powershell
+        run: |
+          $script = @'
+#define MyAppName "MyFlutterApp"
+#define MyAppVersion "1.0"
+#define MyAppExeName "your_app.exe"
+
+[Setup]
+AppId={{B1B6A1C8-8C0D-4E7A-A111-123456789ABC}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
+OutputDir=installer
+OutputBaseFilename=Setup
+Compression=lzma
+SolidCompression=yes
+
+[Files]
+Source: "build\windows\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "vc_redist.x64.exe"; DestDir: "{tmp}"
+
+[Icons]
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+
+[Run]
+Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /passive /norestart"; Flags: waituntilterminated
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+'@
+
+          $script | Out-File installer.iss -Encoding ascii
 
       - name: Build Installer
         run: iscc installer.iss
 
-      - name: Upload
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
           name: Windows-Installer
           path: installer/Setup.exe
-
