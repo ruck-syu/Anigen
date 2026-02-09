@@ -2,7 +2,7 @@ name: Windows Installer Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
@@ -26,7 +26,7 @@ jobs:
       - name: Build Windows App
         run: flutter build windows
 
-      # Download Microsoft VC++ Runtime
+      # Download VC++ runtime (fix missing DLL errors)
       - name: Download VC++ Runtime
         run: curl -L -o vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
 
@@ -34,14 +34,14 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # Create installer script properly (NO encoding bug)
+      # Create installer script safely (literal string)
       - name: Create Installer Script
         shell: powershell
         run: |
-          $script = @"
-#define MyAppName "Anigen"
+          $script = @'
+#define MyAppName "MyFlutterApp"
 #define MyAppVersion "1.0"
-#define MyAppExeName "anigen.exe"
+#define MyAppExeName "your_app.exe"
 
 [Setup]
 AppId={{B1B6A1C8-8C0D-4E7A-A111-123456789ABC}
@@ -55,7 +55,7 @@ Compression=lzma
 SolidCompression=yes
 
 [Files]
-Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "build\windows\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"
 
 [Icons]
@@ -65,14 +65,14 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 [Run]
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /passive /norestart"; Flags: waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
-"@
+'@
 
           $script | Out-File installer.iss -Encoding ascii
 
       - name: Build Installer
         run: iscc installer.iss
 
-      - name: Upload Setup
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
           name: Windows-Installer
