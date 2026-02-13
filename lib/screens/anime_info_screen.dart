@@ -86,10 +86,14 @@ class _AnimeInfoScreenState extends State<AnimeInfoScreen> {
   Widget _buildAnimeInfo() {
     if (_animeData == null) return const SizedBox.shrink();
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth > 600;
+    final expandedHeight = isDesktop ? 400.0 : 300.0;
+
     return CustomScrollView(
       slivers: [
         SliverAppBar(
-          expandedHeight: 300,
+          expandedHeight: expandedHeight,
           pinned: true,
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
@@ -121,18 +125,21 @@ class _AnimeInfoScreenState extends State<AnimeInfoScreen> {
           ),
         ),
         SliverToBoxAdapter(
-          child: Container(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _animeData!.title ?? widget.animeTitle,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: Container(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                padding: EdgeInsets.all(isDesktop ? 24 : 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _animeData!.title ?? widget.animeTitle,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
                 const SizedBox(height: 8),
                 
                 if (_animeData!.titleEnglish != null && 
@@ -274,6 +281,7 @@ class _AnimeInfoScreenState extends State<AnimeInfoScreen> {
               ],
             ),
           ),
+        ),
         ),
       ],
     );
