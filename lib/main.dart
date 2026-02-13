@@ -1,12 +1,25 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:anigen/screens/home_screen.dart';
 
+// Custom HTTP client to handle certificate issues on Windows
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  
+  // Fix certificate verification issues on Windows
+  HttpOverrides.global = MyHttpOverrides();
   
   // Set system navigation bar color
   SystemChrome.setSystemUIOverlayStyle(
