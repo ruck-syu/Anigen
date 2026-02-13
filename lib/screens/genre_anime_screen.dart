@@ -87,17 +87,24 @@ class _GenreAnimeScreenState extends State<GenreAnimeScreen> {
                   )
                 : RefreshIndicator(
                     onRefresh: _loadAnime,
-                    child: GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 0.58,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 16,
-                      ),
-                      itemCount: _animeList.length,
-                      itemBuilder: (context, index) {
-                        final anime = _animeList[index];
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final screenWidth = constraints.maxWidth;
+                        final isDesktop = screenWidth > 600;
+                        final crossAxisCount = isDesktop ? 5 : 3;
+                        final childAspectRatio = isDesktop ? 0.65 : 0.58;
+                        
+                        return GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            childAspectRatio: childAspectRatio,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 16,
+                          ),
+                          itemCount: _animeList.length,
+                          itemBuilder: (context, index) {
+                            final anime = _animeList[index];
                         return GestureDetector(
                           onTap: () {
                             if (anime.malId != null) {
@@ -136,19 +143,21 @@ class _GenreAnimeScreenState extends State<GenreAnimeScreen> {
                                         ),
                                 ),
                               ),
-                              const SizedBox(height: 2),
+                              const SizedBox(height: 4),
                               Text(
                                 anime.title ?? 'Unknown',
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                       fontWeight: FontWeight.w500,
-                                      fontSize: 11,
-                                      height: 1.1,
+                                      fontSize: isDesktop ? 12 : 11,
+                                      height: 1.2,
                                     ),
                               ),
                             ],
                           ),
+                            );
+                          },
                         );
                       },
                     ),
