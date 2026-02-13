@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -35,18 +36,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     
-    player = Player();
-    controller = VideoController(player);
+    try {
+      player = Player();
+      controller = VideoController(player);
 
-    player.stream.error.listen((event) {
-      if (mounted) {
-        setState(() {
-          _error = 'Player Error: $event';
-        });
-      }
-    });
+      player.stream.error.listen((event) {
+        if (mounted) {
+          setState(() {
+            _error = 'Player Error: $event';
+          });
+        }
+      });
 
-    _fetchStream();
+      _fetchStream();
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to initialize player: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   @override
