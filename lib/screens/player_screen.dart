@@ -85,6 +85,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
 
         await player.open(Media(url, httpHeaders: headers));
+        await player.play(); // Actually start playback
 
         setState(() {
           _isLoading = false;

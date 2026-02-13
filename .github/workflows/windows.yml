@@ -57,6 +57,22 @@ jobs:
           echo.
           echo [Run]
           echo Filename: "{app}\anigen.exe"; Description: "Launch Anigen"; Flags: nowait postinstall skipifsilent
+          echo.
+          echo ; Check and prompt for VC++ Redistributable
+          echo [Code]
+          echo function VCRedistNeedsInstall: Boolean;
+          echo begin
+          echo   Result := not RegKeyExists(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'^);
+          echo end;
+          echo.
+          echo function InitializeSetup: Boolean;
+          echo begin
+          echo   Result := True;
+          echo   if VCRedistNeedsInstall then
+          echo   begin
+          echo     MsgBox('This application requires Visual C++ Redistributable. Please install it from Microsoft if the app does not work.', mbInformation, MB_OK^);
+          echo   end;
+          echo end;
           ) > installer.iss
 
       - name: Build Installer
