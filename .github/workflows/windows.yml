@@ -2,6 +2,9 @@ name: Build Windows Setup
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build:
@@ -23,29 +26,37 @@ jobs:
         run: flutter pub get
 
       - name: Build Windows App
-        run: flutter build windows
+        run: flutter build windows --release
 
       # Install Inno Setup
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # Create installer.iss using CMD (no encoding problems)
+      # Create installer.iss with correct app name
       - name: Create ISS file
         shell: cmd
         run: |
           (
           echo [Setup]
-          echo AppName=MyFlutterApp
-          echo AppVersion=1.0
-          echo DefaultDirName={autopf}\MyFlutterApp
+          echo AppName=Anigen
+          echo AppVersion=1.0.0
+          echo AppPublisher=Anigen
+          echo DefaultDirName={autopf}\Anigen
+          echo DefaultGroupName=Anigen
           echo OutputDir=installer
-          echo OutputBaseFilename=Setup
+          echo OutputBaseFilename=Anigen-Setup-Windows
+          echo Compression=lzma2
+          echo SolidCompression=yes
           echo.
           echo [Files]
           echo Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
           echo.
           echo [Icons]
-          echo Name: "{group}\MyFlutterApp"; Filename: "{app}\your_app.exe"
+          echo Name: "{group}\Anigen"; Filename: "{app}\anigen.exe"
+          echo Name: "{autodesktop}\Anigen"; Filename: "{app}\anigen.exe"
+          echo.
+          echo [Run]
+          echo Filename: "{app}\anigen.exe"; Description: "Launch Anigen"; Flags: nowait postinstall skipifsilent
           ) > installer.iss
 
       - name: Build Installer
@@ -54,6 +65,5 @@ jobs:
       - name: Upload Setup
         uses: actions/upload-artifact@v4
         with:
-          name: setup
-          path: installer/Setup.exe
-
+          name: Anigen-Windows-Setup
+          path: installer/Anigen-Setup-Windows.exe
