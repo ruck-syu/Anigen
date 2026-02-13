@@ -25,6 +25,14 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
+      # Convert icon.png to .ico and replace Windows app icon
+      - name: Install ImageMagick
+        run: choco install imagemagick -y
+
+      - name: Convert and replace app icon
+        run: |
+          magick assets/icon.png -define icon:auto-resize=256,128,64,48,32,16 windows/runner/resources/app_icon.ico
+
       - name: Build Windows App
         run: flutter build windows --release
 
@@ -50,6 +58,7 @@ jobs:
           echo.
           echo [Files]
           echo Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
+          echo Source: "assets\icon.png"; DestDir: "{app}"; Flags: ignoreversion
           echo.
           echo [Icons]
           echo Name: "{group}\Anigen"; Filename: "{app}\anigen.exe"
