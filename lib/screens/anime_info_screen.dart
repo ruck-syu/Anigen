@@ -282,6 +282,7 @@ class _AnimeInfoScreenState extends State<AnimeInfoScreen> {
             ),
           ),
         ),
+          ),
         ),
       ],
     );
