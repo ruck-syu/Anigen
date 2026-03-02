@@ -35,75 +35,136 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Container(
-          height: 64,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isLargeScreen = constraints.maxWidth >= 900;
+
+        if (isLargeScreen) {
+          return Scaffold(
+            body: Row(
               children: [
-                IconButton(
-                  icon: Icon(
-                    _currentIndex == 0 ? Icons.home : Icons.home_outlined,
-                    color: _currentIndex == 0
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: () {
+                NavigationRail(
+                  selectedIndex: _currentIndex,
+                  onDestinationSelected: (index) {
                     setState(() {
-                      _currentIndex = 0;
+                      _currentIndex = index;
                     });
                   },
+                  labelType: NavigationRailLabelType.all,
+                  minWidth: 76,
+                  minExtendedWidth: 180,
+                  leading: const SizedBox(height: 24),
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home),
+                      label: Text('home'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.search_outlined),
+                      selectedIcon: Icon(Icons.search),
+                      label: Text('search'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.person_outline),
+                      selectedIcon: Icon(Icons.person),
+                      label: Text('profile'),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: Icon(
-                    _currentIndex == 1 ? Icons.search : Icons.search_outlined,
-                    color: _currentIndex == 1
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _currentIndex = 1;
-                    });
-                  },
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 ),
-                IconButton(
-                  icon: Icon(
-                    _currentIndex == 2 ? Icons.person : Icons.person_outline,
-                    color: _currentIndex == 2
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1200),
+                      child: IndexedStack(
+                        index: _currentIndex,
+                        children: _screens,
+                      ),
+                    ),
                   ),
-                  onPressed: () {
-                    setState(() {
-                      _currentIndex = 2;
-                    });
-                  },
                 ),
               ],
             ),
+          );
+        }
+
+        return Scaffold(
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
           ),
-        ),
-      ),
+          bottomNavigationBar: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Container(
+              height: 64,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _currentIndex == 0 ? Icons.home : Icons.home_outlined,
+                        color: _currentIndex == 0
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _currentIndex = 0;
+                        });
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _currentIndex == 1 ? Icons.search : Icons.search_outlined,
+                        color: _currentIndex == 1
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _currentIndex = 1;
+                        });
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _currentIndex == 2 ? Icons.person : Icons.person_outline,
+                        color: _currentIndex == 2
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _currentIndex = 2;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -171,6 +232,11 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalPadding = screenWidth >= 900 ? 24.0 : 16.0;
+    final cardWidth = screenWidth >= 1200 ? 170.0 : screenWidth >= 900 ? 150.0 : 120.0;
+    final cardHeight = screenWidth >= 900 ? 200.0 : 160.0;
+
     return Scaffold(
       appBar: AppBar(
         title: ShaderMask(
@@ -223,7 +289,7 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
                     children: [
                       // Pill-shaped switcher
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                         child: Row(
                           children: [
                             _buildPillButton(
@@ -253,28 +319,28 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
                       // Combined top/popular section
                       if (_showTopAnime && _topAnime.isNotEmpty) ...[
                         SizedBox(
-                          height: 200,
+                          height: cardHeight + 40,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                             itemCount: _topAnime.length > 10 ? 10 : _topAnime.length,
                             itemBuilder: (context, index) {
                               final anime = _topAnime[index];
-                              return _buildAnimeCard(anime, context);
+                              return _buildAnimeCard(anime, context, cardWidth, cardHeight);
                             },
                           ),
                         ),
                         const SizedBox(height: 24),
                       ] else if (!_showTopAnime && _popularAnime.isNotEmpty) ...[
                         SizedBox(
-                          height: 200,
+                          height: cardHeight + 40,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                             itemCount: _popularAnime.length > 10 ? 10 : _popularAnime.length,
                             itemBuilder: (context, index) {
                               final anime = _popularAnime[index];
-                              return _buildAnimeCard(anime, context);
+                              return _buildAnimeCard(anime, context, cardWidth, cardHeight);
                             },
                           ),
                         ),
@@ -283,7 +349,7 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
                       
                       // Pill-shaped switcher for season/upcoming
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                         child: Row(
                           children: [
                             _buildPillButton(
@@ -313,27 +379,27 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
                       // Combined current season/upcoming section
                       if (_showCurrentSeason && _currentSeason.isNotEmpty) ...[
                         SizedBox(
-                          height: 200,
+                          height: cardHeight + 40,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                             itemCount: _currentSeason.length > 10 ? 10 : _currentSeason.length,
                             itemBuilder: (context, index) {
                               final anime = _currentSeason[index];
-                              return _buildAnimeCard(anime, context);
+                              return _buildAnimeCard(anime, context, cardWidth, cardHeight);
                             },
                           ),
                         ),
                       ] else if (!_showCurrentSeason && _upcomingAnime.isNotEmpty) ...[
                         SizedBox(
-                          height: 200,
+                          height: cardHeight + 40,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                             itemCount: _upcomingAnime.length > 10 ? 10 : _upcomingAnime.length,
                             itemBuilder: (context, index) {
                               final anime = _upcomingAnime[index];
-                              return _buildAnimeCard(anime, context);
+                              return _buildAnimeCard(anime, context, cardWidth, cardHeight);
                             },
                           ),
                         ),
@@ -343,7 +409,7 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
                       if (_genres.isNotEmpty) ...[
                         const SizedBox(height: 24),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                           child: Text(
                             'categories',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -353,7 +419,7 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
                         ),
                         const SizedBox(height: 12),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                           child: Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -426,7 +492,7 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
     );
   }
 
-  Widget _buildAnimeCard(Anime anime, BuildContext context) {
+  Widget _buildAnimeCard(Anime anime, BuildContext context, double cardWidth, double imageHeight) {
     return GestureDetector(
       onTap: () {
         if (anime.malId != null) {
@@ -443,7 +509,7 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
         }
       },
       child: Container(
-        width: 120,
+        width: cardWidth,
         margin: const EdgeInsets.only(right: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,19 +519,19 @@ class _HomeContentScreenState extends State<HomeContentScreen> {
               child: anime.imageUrl != null
                   ? Image.network(
                       anime.imageUrl!,
-                      height: 160,
-                      width: 120,
+                      height: imageHeight,
+                      width: cardWidth,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Container(
-                        height: 160,
-                        width: 120,
+                        height: imageHeight,
+                        width: cardWidth,
                         color: Theme.of(context).colorScheme.surfaceContainer,
                         child: const Icon(Icons.broken_image),
                       ),
                     )
                   : Container(
-                      height: 160,
-                      width: 120,
+                      height: imageHeight,
+                      width: cardWidth,
                       color: Theme.of(context).colorScheme.surfaceContainer,
                       child: const Icon(Icons.movie),
                     ),
