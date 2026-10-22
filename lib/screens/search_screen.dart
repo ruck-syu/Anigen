@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:anigen/models/anime.dart';
-import 'package:anigen/providers/anime_provider.dart';
+import 'package:anigen/models/anilist_media.dart';
+import 'package:anigen/providers/anilist_provider.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/title_cards.dart';
 
@@ -14,11 +15,20 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => SearchScreenState();
 }
 
+/// Searches AniList, so opened titles come with their details. The details
+/// page then finds the matching stream, like titles opened from home.
 class SearchScreenState extends State<SearchScreen> {
-  final AnimeProvider _provider = AnimeProvider();
+  static const _recentKey = 'recent_titles';
+  static const _maxRecent = 3;
+  // Hianime-only results from before search used AniList.
+  static const _oldRecentKey = 'recent_anime';
+
+  final _provider = AniListProvider();
   final TextEditingController _searchController = TextEditingController();
-  List<Anime> _results = [];
-  List<Anime> _recentAnime = [];
+  List<AniListMedia> _results = [];
+  List<LibraryTitle> _recentAnime = [];
+  SearchFilter _filter = const SearchFilter();
+  final _genres = ValueNotifier<List<String>>([]);
   bool _isLoading = false;
   bool _hasSearched = false;
   String? _error;
@@ -36,6 +46,7 @@ class SearchScreenState extends State<SearchScreen> {
   void dispose() {
     _debounce?.cancel();
     _searchController.dispose();
+    _genres.dispose();
     super.dispose();
   }
 
@@ -47,6 +58,10 @@ class SearchScreenState extends State<SearchScreen> {
   void _onSearchChanged() {
     final query = _searchController.text;
     _debounce?.cancel();
+    if (query.isEmpty && !_filter.isEmpty) {
+      _debounce = Timer(const Duration(milliseconds: 400), _search);
+      return;
+    }
     if (query.isEmpty) {
       setState(() {
         _hasSearched = false;
@@ -65,47 +80,29 @@ class SearchScreenState extends State<SearchScreen> {
   Future<void> _loadRecentAnime() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonList = prefs.getStringList('recent_anime') ?? [];
-      setState(() {
-        _recentAnime = jsonList
-            .map((jsonStr) {
-              final json = jsonDecode(jsonStr);
-              return Anime(
-                title: json['title'],
-                url: json['url'],
-                thumbnail: json['thumbnail'],
-              );
-            })
-            .where((anime) => AnimeProvider.isSupportedId(anime.url))
-            .toList();
-      });
+      prefs.remove(_oldRecentKey);
+      final recent = [
+        for (final item in prefs.getStringList(_recentKey) ?? const <String>[])
+          LibraryTitle.fromJson(jsonDecode(item)),
+      ].take(_maxRecent).toList();
+      if (mounted) setState(() => _recentAnime = recent);
     } catch (e) {
-      setState(() {
-        _recentAnime = [];
-      });
+      if (mounted) setState(() => _recentAnime = []);
     }
   }
 
-  Future<void> _saveRecentAnime(Anime anime) async {
-    _recentAnime.removeWhere((a) => a.url == anime.url);
-    _recentAnime.insert(0, anime);
-    if (_recentAnime.length > 10) {
-      _recentAnime = _recentAnime.sublist(0, 10);
+  Future<void> _saveRecentAnime(LibraryTitle title) async {
+    _recentAnime.removeWhere((t) => t.anilistId == title.anilistId);
+    _recentAnime.insert(0, title);
+    if (_recentAnime.length > _maxRecent) {
+      _recentAnime = _recentAnime.sublist(0, _maxRecent);
     }
     setState(() {});
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
-        'recent_anime',
-        _recentAnime
-            .map(
-              (a) => jsonEncode({
-                'title': a.title,
-                'url': a.url,
-                'thumbnail': a.thumbnail,
-              }),
-            )
-            .toList(),
+        _recentKey,
+        _recentAnime.map((t) => jsonEncode(t.toJson())).toList(),
       );
     } catch (e) {
       // Silently fail
@@ -118,7 +115,7 @@ class SearchScreenState extends State<SearchScreen> {
     });
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('recent_anime');
+      await prefs.remove(_recentKey);
     } catch (e) {
       // Silently fail
     }
@@ -126,7 +123,7 @@ class SearchScreenState extends State<SearchScreen> {
 
   Future<void> _search({String? query}) async {
     final searchQuery = query ?? _searchController.text;
-    if (searchQuery.isEmpty) return;
+    if (searchQuery.isEmpty && _filter.isEmpty) return;
     final id = ++_searchId;
 
     setState(() {
@@ -136,7 +133,7 @@ class SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      final results = await _provider.search(searchQuery);
+      final results = await _provider.search(searchQuery, filter: _filter);
       if (!mounted || id != _searchId) return;
       setState(() {
         _results = results;
@@ -151,17 +148,37 @@ class SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  void _open(Anime anime) {
+  Future<void> _openFilters() async {
     FocusScope.of(context).unfocus();
-    _saveRecentAnime(anime);
-    openTitle(
-      context,
-      LibraryTitle(
-        title: anime.title,
-        image: anime.thumbnail,
-        animeId: anime.url,
-      ),
+    if (_genres.value.isEmpty) {
+      _provider.getGenres().then((genres) {
+        if (mounted) _genres.value = genres;
+      }, onError: (_) {});
+    }
+    final filter = await showModalBottomSheet<SearchFilter>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useRootNavigator: true,
+      builder: (context) => _FilterSheet(initial: _filter, genres: _genres),
     );
+    if (filter == null || !mounted) return;
+    setState(() => _filter = filter);
+    if (_searchController.text.isEmpty && filter.isEmpty) {
+      setState(() {
+        _hasSearched = false;
+        _results = [];
+        _error = null;
+      });
+    } else {
+      _search();
+    }
+  }
+
+  void _open(LibraryTitle title) {
+    FocusScope.of(context).unfocus();
+    _saveRecentAnime(title);
+    openTitle(context, title);
   }
 
   @override
@@ -178,20 +195,36 @@ class SearchScreenState extends State<SearchScreen> {
             children: [
               Padding(
                 padding: EdgeInsets.fromLTRB(padding, 12, padding, 8),
-                child: TextField(
-                  controller: _searchController,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (query) => _search(query: query),
-                  decoration: InputDecoration(
-                    hintText: 'search shows, movies...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: _searchController.clear,
-                          )
-                        : null,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (query) => _search(query: query),
+                        decoration: InputDecoration(
+                          hintText: 'search shows, movies...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: _searchController.clear,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: 'filters',
+                      onPressed: _openFilters,
+                      icon: Badge(
+                        isLabelVisible: !_filter.isEmpty,
+                        label: Text('${_filter.count}'),
+                        child: const Icon(Icons.tune),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (_isLoading) const LinearProgressIndicator(minHeight: 2),
@@ -208,60 +241,31 @@ class SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildIdle(double padding) {
-    final library = LibraryStore.instance;
-    return ListenableBuilder(
-      listenable: library,
-      builder: (context, _) {
-        final history = library.continueWatching;
-        if (_recentAnime.isEmpty && history.isEmpty) {
-          return _Message(icon: Icons.search, text: 'find something to watch');
-        }
-        return ListView(
-          children: [
-            CardRow(
-              title: 'recent searches',
-              padding: padding,
-              height: 112 * 3 / 2 + 42,
-              itemCount: _recentAnime.length,
-              trailing: TextButton(
-                onPressed: _clearRecentAnime,
-                child: const Text('clear'),
-              ),
-              itemBuilder: (context, i) => PosterCard(
-                title: _recentAnime[i].title,
-                image: _recentAnime[i].thumbnail,
-                width: 112,
-                onTap: () => _open(_recentAnime[i]),
-              ),
-            ),
-            if (history.isNotEmpty) ...[
-              SectionHeader('recently watched', padding: padding),
-              for (final entry in history.take(8))
-                ListTile(
-                  tileColor: Colors.transparent,
-                  contentPadding: EdgeInsets.symmetric(horizontal: padding),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: SizedBox(
-                      width: 40,
-                      height: 56,
-                      child: NetImage(entry.title.image),
-                    ),
-                  ),
-                  title: Text(
-                    entry.title.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text('episode ${entry.lastEpisode}'),
-                  trailing: const Icon(Icons.play_circle_outline),
-                  onTap: () => openTitle(context, entry.title, autoplay: true),
-                ),
-            ],
-            SizedBox(height: bottomInset(context) + 16),
-          ],
-        );
-      },
+    if (_recentAnime.isEmpty) {
+      return const _Message(
+        icon: Icons.search,
+        text: 'find something to watch',
+      );
+    }
+    return ListView(
+      children: [
+        CardRow(
+          title: 'recent searches',
+          padding: padding,
+          height: 112 * 3 / 2 + 42,
+          itemCount: _recentAnime.length,
+          trailing: TextButton(
+            onPressed: _clearRecentAnime,
+            child: const Text('clear'),
+          ),
+          itemBuilder: (context, i) => PosterCard(
+            title: _recentAnime[i].title,
+            image: _recentAnime[i].image,
+            width: 112,
+            onTap: () => _open(_recentAnime[i]),
+          ),
+        ),
+      ],
     );
   }
 
@@ -300,12 +304,12 @@ class SearchScreenState extends State<SearchScreen> {
         ),
         itemCount: _results.length,
         itemBuilder: (context, index) {
-          final anime = _results[index];
+          final media = _results[index];
           return PosterCard(
-            title: anime.title,
-            image: anime.thumbnail,
+            title: media.title,
+            image: media.image,
             width: double.infinity,
-            onTap: () => _open(anime),
+            onTap: () => _open(titleFromAnilist(media)),
           );
         },
       ),
@@ -341,6 +345,174 @@ class _Message extends StatelessWidget {
             ?action,
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Sort, format, status, year and genres for search.
+class _FilterSheet extends StatefulWidget {
+  final SearchFilter initial;
+
+  /// Genres arrive from AniList while the sheet may already be open.
+  final ValueListenable<List<String>> genres;
+
+  const _FilterSheet({required this.initial, required this.genres});
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late String _sort = widget.initial.sort;
+  late final Set<String> _formats = {...widget.initial.formats};
+  late String? _status = widget.initial.status;
+  late final Set<String> _genres = {...widget.initial.genres};
+  late int? _year = widget.initial.year;
+
+  void _reset() => setState(() {
+    _sort = SearchFilter.defaultSort;
+    _formats.clear();
+    _status = null;
+    _genres.clear();
+    _year = null;
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = theme.textTheme.labelLarge?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final thisYear = DateTime.now().year;
+
+    Widget section(String title, List<Widget> chips) => Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: label),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, runSpacing: 4, children: chips),
+        ],
+      ),
+    );
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      builder: (context, scroll) => Column(
+        children: [
+          Expanded(
+            child: ListView(
+              controller: scroll,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              children: [
+                section('sort', [
+                  for (final MapEntry(key: value, value: name)
+                      in SearchFilter.sorts.entries)
+                    ChoiceChip(
+                      label: Text(name),
+                      selected: _sort == value,
+                      onSelected: (_) => setState(() => _sort = value),
+                    ),
+                ]),
+                section('format', [
+                  for (final MapEntry(key: value, value: name)
+                      in SearchFilter.formatLabels.entries)
+                    FilterChip(
+                      label: Text(name),
+                      selected: _formats.contains(value),
+                      onSelected: (on) => setState(
+                        () => on ? _formats.add(value) : _formats.remove(value),
+                      ),
+                    ),
+                ]),
+                section('status', [
+                  for (final MapEntry(key: value, value: name)
+                      in SearchFilter.statusLabels.entries)
+                    ChoiceChip(
+                      label: Text(name),
+                      selected: _status == value,
+                      onSelected: (on) =>
+                          setState(() => _status = on ? value : null),
+                    ),
+                ]),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Row(
+                    children: [
+                      Text('year', style: label),
+                      const Spacer(),
+                      DropdownButton<int?>(
+                        value: _year,
+                        underline: const SizedBox.shrink(),
+                        onChanged: (year) => setState(() => _year = year),
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('any'),
+                          ),
+                          for (var y = thisYear + 1; y >= 1970; y--)
+                            DropdownMenuItem(value: y, child: Text('$y')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                ValueListenableBuilder(
+                  valueListenable: widget.genres,
+                  builder: (context, genres, _) {
+                    if (genres.isEmpty) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    return section('genres', [
+                      for (final genre in genres)
+                        FilterChip(
+                          label: Text(genre.toLowerCase()),
+                          selected: _genres.contains(genre),
+                          onSelected: (on) => setState(
+                            () =>
+                                on ? _genres.add(genre) : _genres.remove(genre),
+                          ),
+                        ),
+                    ]);
+                  },
+                ),
+              ],
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+              child: Row(
+                children: [
+                  TextButton(onPressed: _reset, child: const Text('reset')),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(
+                      SearchFilter(
+                        sort: _sort,
+                        formats: {..._formats},
+                        status: _status,
+                        genres: {..._genres},
+                        year: _year,
+                      ),
+                    ),
+                    child: const Text('show results'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
