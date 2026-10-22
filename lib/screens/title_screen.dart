@@ -1,14 +1,16 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:jikan_api/jikan_api.dart' as jikan;
+import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/models/anime.dart';
+import 'package:anigen/providers/anilist_provider.dart';
 import 'package:anigen/providers/anime_provider.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/services/playback_controller.dart';
 import 'package:anigen/widgets/title_cards.dart';
 
-/// Details page for a show. Works from a MyAnimeList id (metadata from
-/// Jikan, video source found by searching hianime) or from a hianime id.
+/// Details page for a show. Works from an AniList or MyAnimeList id
+/// (metadata from AniList, video source found by searching hianime) or from
+/// a hianime id.
 class TitleScreen extends StatefulWidget {
   final LibraryTitle title;
 
@@ -24,21 +26,25 @@ class TitleScreen extends StatefulWidget {
 class _TitleScreenState extends State<TitleScreen> {
   final _library = LibraryStore.instance;
   final _playback = PlaybackController.instance;
+  final _anilist = AniListProvider();
 
-  jikan.Anime? _info;
-  List<jikan.Recommendation> _recommendations = [];
+  AniListMedia? _info;
+  List<AniListMedia> _recommendations = [];
   LibraryTitle? _source;
   List<Episode>? _episodes;
   String? _sourceError;
-  bool _synopsisExpanded = false;
+  bool _descriptionExpanded = false;
   bool _showEpisodes = true;
+
+  int? get _anilistId => widget.title.anilistId ?? _info?.id;
 
   int? get _malId => widget.title.malId ?? _info?.malId;
 
   LibraryTitle get _title => LibraryTitle(
-    title: _info?.titleEnglish ?? _info?.title ?? widget.title.title,
-    image: _info?.imageUrl ?? widget.title.image ?? _source?.image,
+    title: _info?.title ?? widget.title.title,
+    image: _info?.image ?? widget.title.image ?? _source?.image,
     animeId: _source?.animeId ?? widget.title.animeId,
+    anilistId: _anilistId,
     malId: _malId,
   );
 
@@ -49,23 +55,27 @@ class _TitleScreenState extends State<TitleScreen> {
   }
 
   Future<void> _load() async {
+    final anilistId = widget.title.anilistId;
     final malId = widget.title.malId;
-    if (malId != null) {
+    if (anilistId != null || malId != null) {
       try {
-        final info = await jikan.Jikan().getAnime(malId);
-        if (mounted) setState(() => _info = info);
+        final info = await _anilist.getMedia(id: anilistId, malId: malId);
+        if (mounted && info != null) setState(() => _info = info);
       } catch (e) {
         // The page still works from the title we were given
       }
     }
     await _resolveSource();
-    if (malId != null) _loadRecommendations(malId);
+    if (anilistId != null || malId != null) {
+      _loadRecommendations(anilistId: anilistId, malId: malId);
+    }
   }
 
-  Future<void> _loadRecommendations(int malId) async {
+  Future<void> _loadRecommendations({int? anilistId, int? malId}) async {
     try {
-      final recommendations = await jikan.Jikan().getAnimeRecommendations(
-        malId,
+      final recommendations = await _anilist.getRecommendations(
+        id: anilistId,
+        malId: malId,
       );
       if (mounted) {
         setState(() => _recommendations = recommendations.take(18).toList());
@@ -111,8 +121,9 @@ class _TitleScreenState extends State<TitleScreen> {
   /// Searches hianime for the show, preferring an exact title match.
   Future<LibraryTitle?> _findSource() async {
     final names = {
-      if (_info?.titleEnglish != null) _info!.titleEnglish!,
-      _info?.title ?? widget.title.title,
+      if (_info?.title != null) _info!.title,
+      if (_info?.titleRomaji != null) _info!.titleRomaji!,
+      widget.title.title,
     };
     for (final name in names) {
       final results = await AnimeProvider().search(name);
@@ -289,17 +300,17 @@ class _TitleScreenState extends State<TitleScreen> {
     final meta = <Widget>[
       if (info?.score != null)
         Text(
-          '★ ${info!.score!.toStringAsFixed(1)}',
+          '★ ${info!.scoreOutOfTen!.toStringAsFixed(1)}',
           style: const TextStyle(color: green, fontWeight: FontWeight.w700),
         ),
-      if (info?.year != null) Text('${info!.year}'),
-      if (info?.type != null) _Badge(info!.type!),
+      if (info?.seasonYear != null) Text('${info!.seasonYear}'),
+      if (info?.format != null) _Badge(info!.format!),
       if (info?.episodes != null)
         Text('${info!.episodes} eps')
       else if (_episodes != null)
         Text('${_episodes!.length} eps'),
-      if (info?.rating != null) _Badge(info!.rating!.split(' ').first),
-      if (info?.airing ?? false) const _Badge('airing'),
+      if (info?.duration != null) Text('${info!.duration} min'),
+      if (info?.isAiring ?? false) const _Badge('airing'),
     ];
 
     String playLabel = 'play';
@@ -327,12 +338,12 @@ class _TitleScreenState extends State<TitleScreen> {
             ),
           ),
           if (info != null &&
-              info.titleEnglish != null &&
-              info.titleEnglish != info.title)
+              info.titleRomaji != null &&
+              info.titleRomaji != info.title)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                info.title,
+                info.titleRomaji!,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
@@ -417,18 +428,18 @@ class _TitleScreenState extends State<TitleScreen> {
               label: const Text('retry'),
             ),
           ],
-          if (info?.synopsis != null) ...[
+          if (info?.description != null) ...[
             const SizedBox(height: 16),
             GestureDetector(
               onTap: () =>
-                  setState(() => _synopsisExpanded = !_synopsisExpanded),
+                  setState(() => _descriptionExpanded = !_descriptionExpanded),
               child: AnimatedSize(
                 duration: const Duration(milliseconds: 200),
                 alignment: Alignment.topCenter,
                 child: Text(
-                  info!.synopsis!,
-                  maxLines: _synopsisExpanded ? null : 4,
-                  overflow: _synopsisExpanded ? null : TextOverflow.ellipsis,
+                  info!.description!,
+                  maxLines: _descriptionExpanded ? null : 4,
+                  overflow: _descriptionExpanded ? null : TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                 ),
               ),
@@ -436,10 +447,10 @@ class _TitleScreenState extends State<TitleScreen> {
           ],
           if (info != null && info.genres.isNotEmpty) ...[
             const SizedBox(height: 10),
-            _LabeledLine('genres', info.genres.map((g) => g.name).join(', ')),
+            _LabeledLine('genres', info.genres.join(', ')),
           ],
           if (info != null && info.studios.isNotEmpty)
-            _LabeledLine('studio', info.studios.map((s) => s.name).join(', ')),
+            _LabeledLine('studio', info.studios.join(', ')),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -482,7 +493,7 @@ class _TitleScreenState extends State<TitleScreen> {
                 selected: _showEpisodes,
                 onTap: () => setState(() => _showEpisodes = true),
               ),
-              if (_malId != null)
+              if (_anilistId != null || _malId != null)
                 _TabLabel(
                   label: 'more like this',
                   selected: !_showEpisodes,
@@ -568,20 +579,13 @@ class _TitleScreenState extends State<TitleScreen> {
         ),
         itemCount: _recommendations.length,
         itemBuilder: (context, index) {
-          final entry = _recommendations[index].entry;
+          final media = _recommendations[index];
           return PosterCard(
-            title: entry.title,
-            image: entry.imageUrl,
+            title: media.title,
+            image: media.image,
             width: double.infinity,
             showTitle: false,
-            onTap: () => openTitle(
-              context,
-              LibraryTitle(
-                title: entry.title,
-                image: entry.imageUrl,
-                malId: entry.malId,
-              ),
-            ),
+            onTap: () => openTitle(context, titleFromAnilist(media)),
           );
         },
       ),

@@ -44,7 +44,6 @@ dependencies:
   path_provider: ^2.1.5
   google_fonts: ^6.2.1
   shared_preferences: ^2.3.3
-  jikan_api: ^2.3.0
 
 dev_dependencies:
   flutter_test:
