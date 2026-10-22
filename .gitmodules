@@ -1,0 +1,3 @@
+[submodule "ani-cli"]
+	path = ani-cli
+	url = https://github.com/pystardust/ani-cli

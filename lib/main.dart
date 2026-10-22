@@ -4,31 +4,40 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:anigen/screens/home_screen.dart';
+import 'package:anigen/providers/scraper_config_store.dart';
+import 'package:anigen/services/library_store.dart';
 
 // Custom HTTP client to handle certificate issues on Windows
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
   }
 }
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  
+
   // Fix certificate verification issues on Windows
   HttpOverrides.global = MyHttpOverrides();
-  
+
+  // Pick up scraper fixes published in the repo without a new build
+  ScraperConfigStore.refresh();
+
+  // Watch history and My List, needed by the first screen
+  await LibraryStore.instance.load();
+
   // Set system navigation bar color
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
-      systemNavigationBarColor: Color(0xFF1e1e2e), // Catppuccin Mocha base
+      systemNavigationBarColor: Color(0xFF000000),
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
-  
+
   runApp(const AnigenApp());
 }
 
@@ -37,21 +46,16 @@ class AnigenApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Catppuccin Mocha colors
-    const base = Color(0xFF1e1e2e);
-    const mantle = Color(0xFF181825);
-    const crust = Color(0xFF11111b);
-    const surface0 = Color(0xFF313244);
-    const surface1 = Color(0xFF45475a);
-    const surface2 = Color(0xFF585b70);
-    const text = Color(0xFFcdd6f4);
-    const subtext0 = Color(0xFFa6adc8);
-    const lavender = Color(0xFFb4befe);
-    const blue = Color(0xFF89b4fa);
-    const sapphire = Color(0xFF74c7ec);
-    const mauve = Color(0xFFcba6f7);
-    const red = Color(0xFFf38ba8);
-    
+    // Black and red
+    const base = Color(0xFF000000);
+    const mantle = Color(0xFF0A0A0A);
+    const surface0 = Color(0xFF1A1A1A);
+    const surface1 = Color(0xFF262626);
+    const text = Color(0xFFF5F5F5);
+    const subtext0 = Color(0xFFA3A3A3);
+    const red = Color(0xFFE50914);
+    const darkRed = Color(0xFFB20710);
+
     return MaterialApp(
       title: 'Anigen',
       debugShowCheckedModeBanner: false,
@@ -59,8 +63,9 @@ class AnigenApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.dark(
-          primary: mauve,
-          secondary: lavender,
+          primary: red,
+          onPrimary: Colors.white,
+          secondary: darkRed,
           surface: base,
           surfaceContainerHighest: surface0,
           surfaceContainer: surface1,
@@ -95,40 +100,40 @@ class AnigenApp extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: mauve, width: 2),
+            borderSide: BorderSide(color: red, width: 2),
           ),
           hintStyle: GoogleFonts.jetBrainsMono(color: subtext0),
         ),
-        listTileTheme: ListTileThemeData(
-          iconColor: lavender,
-          textColor: text,
-          tileColor: surface0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith(
+            (states) =>
+                states.contains(WidgetState.selected) ? Colors.white : null,
+          ),
+          trackColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected) ? red : null,
           ),
         ),
-        iconTheme: const IconThemeData(color: lavender),
+        listTileTheme: ListTileThemeData(
+          iconColor: text,
+          textColor: text,
+          tileColor: surface0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        iconTheme: const IconThemeData(color: text),
         textTheme: GoogleFonts.jetBrainsMonoTextTheme(
-          ThemeData.dark().textTheme.apply(
-            bodyColor: text,
-            displayColor: text,
-          ),
+          ThemeData.dark().textTheme.apply(bodyColor: text, displayColor: text),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: mauve,
-            foregroundColor: crust,
-            textStyle: GoogleFonts.jetBrainsMono(
-              fontWeight: FontWeight.w600,
-            ),
+            backgroundColor: red,
+            foregroundColor: Colors.white,
+            textStyle: GoogleFonts.jetBrainsMono(fontWeight: FontWeight.w600),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
           ),
         ),
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-          color: mauve,
-        ),
+        progressIndicatorTheme: const ProgressIndicatorThemeData(color: red),
       ),
       home: const HomeScreen(),
     );

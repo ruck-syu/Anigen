@@ -39,6 +39,18 @@ class JikanProvider {
     }
   }
 
+  Future<List<Anime>> getTopMovies({int page = 1}) async {
+    try {
+      final response = await _jikan.getTopAnime(
+        page: page,
+        type: AnimeType.movie,
+      );
+      return response;
+    } catch (e) {
+      throw Exception('Failed to fetch top movies: $e');
+    }
+  }
+
   Future<List<Anime>> getUpcomingAnime({int page = 1}) async {
     try {
       final response = await _jikan.getSeasonUpcoming(page: page);
@@ -52,10 +64,7 @@ class JikanProvider {
     try {
       final now = DateTime.now();
       final weekday = _getWeekday(now.weekday);
-      final response = await _jikan.getSchedules(
-        weekday: weekday,
-        page: page,
-      );
+      final response = await _jikan.getSchedules(weekday: weekday, page: page);
       return response;
     } catch (e) {
       throw Exception('Failed to fetch airing schedule: $e');
@@ -84,7 +93,7 @@ class JikanProvider {
     try {
       final List<Anime> allAnime = [];
       int page = 1;
-      
+
       // Fetch multiple pages to get enough anime for the genre, sorted by score
       while (allAnime.length < 50 && page <= 3) {
         final response = await _jikan.searchAnime(
@@ -93,12 +102,12 @@ class JikanProvider {
           sort: 'desc',
           page: page,
         );
-        
+
         if (response.isEmpty) break;
         allAnime.addAll(response);
         page++;
       }
-      
+
       return allAnime.take(50).toList();
     } catch (e) {
       throw Exception('Failed to fetch anime by genre: $e');
