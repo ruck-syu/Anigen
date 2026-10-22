@@ -3,18 +3,20 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A show as the library knows it. [animeId] is the hianime slug (needed to
-/// play), [malId] the MyAnimeList id (needed for metadata). Either may be
-/// missing.
+/// play), [anilistId] the AniList id and [malId] the MyAnimeList id (needed
+/// for metadata). Any of them may be missing.
 class LibraryTitle {
   final String title;
   final String? image;
   final String? animeId;
+  final int? anilistId;
   final int? malId;
 
   const LibraryTitle({
     required this.title,
     this.image,
     this.animeId,
+    this.anilistId,
     this.malId,
   });
 
@@ -24,6 +26,7 @@ class LibraryTitle {
     title: json['title'] as String? ?? '',
     image: json['image'] as String?,
     animeId: json['animeId'] as String?,
+    anilistId: json['anilistId'] as int?,
     malId: json['malId'] as int?,
   );
 
@@ -31,6 +34,7 @@ class LibraryTitle {
     'title': title,
     if (image != null) 'image': image,
     if (animeId != null) 'animeId': animeId,
+    if (anilistId != null) 'anilistId': anilistId,
     if (malId != null) 'malId': malId,
   };
 
@@ -39,6 +43,7 @@ class LibraryTitle {
     title: title.isNotEmpty ? title : other.title,
     image: image ?? other.image,
     animeId: animeId ?? other.animeId,
+    anilistId: anilistId ?? other.anilistId,
     malId: malId ?? other.malId,
   );
 }

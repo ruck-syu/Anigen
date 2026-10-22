@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:jikan_api/jikan_api.dart';
-import 'package:anigen/providers/jikan_provider.dart';
+import 'package:anigen/models/anilist_media.dart';
+import 'package:anigen/providers/anilist_provider.dart';
 import 'package:anigen/screens/genre_anime_screen.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/title_cards.dart';
@@ -15,30 +15,19 @@ class BrowseScreen extends StatefulWidget {
 }
 
 class _BrowseScreenState extends State<BrowseScreen> {
-  static const _hiddenGenres = [
-    'boys love',
-    'girls love',
-    'ecchi',
-    'erotica',
-    'hentai',
-    'adult cast',
-    'anthropomorphic',
-    'cgdct',
-  ];
-
-  final _jikan = JikanProvider();
+  final _anilist = AniListProvider();
   final _scroll = ScrollController();
   final _barOpacity = ValueNotifier<double>(0);
 
-  List<Anime> _season = [];
-  List<Anime> _top = [];
-  List<Anime> _airing = [];
-  List<Anime> _popular = [];
-  List<Anime> _movies = [];
-  List<Anime> _upcoming = [];
-  List<Genre> _genres = [];
+  List<AniListMedia> _season = [];
+  List<AniListMedia> _top = [];
+  List<AniListMedia> _airing = [];
+  List<AniListMedia> _popular = [];
+  List<AniListMedia> _movies = [];
+  List<AniListMedia> _upcoming = [];
+  List<String> _genres = [];
   bool _isLoading = true;
-  int _failures = 0;
+  String? _error;
 
   @override
   void initState() {
@@ -56,44 +45,39 @@ class _BrowseScreenState extends State<BrowseScreen> {
     super.dispose();
   }
 
-  /// Jikan allows about 3 requests a second, so rows load one after another
-  /// and each fills in as it arrives. One failing row doesn't sink the page.
+  /// Every row comes from a single AniList request, so the whole page
+  /// arrives at once instead of trickling in one call at a time.
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
-      _failures = 0;
+      _error = null;
     });
-    Future<void> load<T>(
-      Future<List<T>> Function() fetch,
-      void Function(List<T>) apply,
-    ) async {
-      try {
-        final result = await fetch();
-        if (mounted) setState(() => apply(result));
-      } catch (e) {
-        debugPrint('browse: $e');
-        _failures++;
-      }
-      await Future.delayed(const Duration(milliseconds: 400));
+    try {
+      final feed = await _anilist.getHomeFeed();
+      if (!mounted) return;
+      setState(() {
+        _season = feed.season;
+        _top = feed.top;
+        _airing = feed.airing;
+        _popular = feed.popular;
+        _movies = feed.movies;
+        _upcoming = feed.upcoming;
+        _genres = feed.genres;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('browse: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+      });
     }
-
-    await load(_jikan.getSeasonAnime, (r) => _season = r);
-    await load(_jikan.getTopAnime, (r) => _top = r);
-    await load(_jikan.getAiringToday, (r) => _airing = r);
-    await load(_jikan.getPopularAnime, (r) => _popular = r);
-    await load(_jikan.getTopMovies, (r) => _movies = r);
-    await load(_jikan.getUpcomingAnime, (r) => _upcoming = r);
-    await load(_jikan.getAnimeGenres, (r) {
-      _genres =
-          r.where((g) => !_hiddenGenres.contains(g.name.toLowerCase())).toList()
-            ..sort((a, b) => a.name.compareTo(b.name));
-    });
-    if (mounted) setState(() => _isLoading = false);
   }
 
-  Anime? get _featured {
+  AniListMedia? get _featured {
     final candidates = (_season.isNotEmpty ? _season : _top)
-        .where((a) => a.synopsis != null && (a.score ?? 0) > 0)
+        .where((a) => a.description != null && (a.score ?? 0) > 0)
         .take(6)
         .toList();
     if (candidates.isEmpty) return null;
@@ -114,7 +98,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
     final posterRowHeight = posterWidth * 3 / 2 + 42;
     final nothingLoaded =
         !_isLoading &&
-        _failures > 0 &&
+        _error != null &&
         _season.isEmpty &&
         _top.isEmpty &&
         _popular.isEmpty;
@@ -123,7 +107,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
       body: Stack(
         children: [
           if (nothingLoaded)
-            _ErrorState(onRetry: _loadData)
+            _ErrorState(error: _error!, onRetry: _loadData)
           else
             RefreshIndicator(
               onRefresh: _loadData,
@@ -143,7 +127,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
                                     : const SizedBox.shrink(),
                               ),
                             )
-                          : _Hero(anime: _featured!, wide: wide),
+                          : _Hero(media: _featured!, wide: wide),
                     ),
                     SliverList.list(
                       children: [
@@ -158,41 +142,41 @@ class _BrowseScreenState extends State<BrowseScreen> {
                             itemBuilder: (context, i) => RankedCard(
                               rank: i + 1,
                               title: _top[i].title,
-                              image: _top[i].imageUrl,
+                              image: _top[i].image,
                               posterWidth: posterWidth,
                               onTap: () =>
-                                  openTitle(context, titleFromJikan(_top[i])),
+                                  openTitle(context, titleFromAnilist(_top[i])),
                             ),
                           ),
-                        _jikanRow(
-                          'airing today',
+                        _mediaRow(
+                          'airing now',
                           _airing,
                           padding,
                           posterWidth,
                           posterRowHeight,
                         ),
-                        _jikanRow(
+                        _mediaRow(
                           'new this season',
                           _season,
                           padding,
                           posterWidth,
                           posterRowHeight,
                         ),
-                        _jikanRow(
+                        _mediaRow(
                           'most popular',
                           _popular,
                           padding,
                           posterWidth,
                           posterRowHeight,
                         ),
-                        _jikanRow(
+                        _mediaRow(
                           'top movies',
                           _movies,
                           padding,
                           posterWidth,
                           posterRowHeight,
                         ),
-                        _jikanRow(
+                        _mediaRow(
                           'coming soon',
                           _upcoming,
                           padding,
@@ -209,12 +193,12 @@ class _BrowseScreenState extends State<BrowseScreen> {
                               children: [
                                 for (final genre in _genres)
                                   ActionChip(
-                                    label: Text(genre.name.toLowerCase()),
+                                    label: Text(genre.toLowerCase()),
                                     onPressed: () => Navigator.of(context).push(
                                       MaterialPageRoute(
                                         builder: (context) => GenreAnimeScreen(
-                                          genreId: genre.malId,
-                                          genreName: genre.name,
+                                          genre: genre,
+                                          genreName: genre,
                                         ),
                                       ),
                                     ),
@@ -317,9 +301,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
     );
   }
 
-  Widget _jikanRow(
+  Widget _mediaRow(
     String title,
-    List<Anime> items,
+    List<AniListMedia> items,
     double padding,
     double posterWidth,
     double height,
@@ -330,10 +314,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
       height: height,
       itemCount: items.length.clamp(0, 20),
       itemBuilder: (context, i) => PosterCard(
-        title: items[i].titleEnglish ?? items[i].title,
-        image: items[i].imageUrl,
+        title: items[i].title,
+        image: items[i].image,
         width: posterWidth,
-        onTap: () => openTitle(context, titleFromJikan(items[i])),
+        onTap: () => openTitle(context, titleFromAnilist(items[i])),
       ),
     );
   }
@@ -341,22 +325,19 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
 /// The big featured title at the top of home.
 class _Hero extends StatelessWidget {
-  final Anime anime;
+  final AniListMedia media;
   final bool wide;
 
-  const _Hero({required this.anime, required this.wide});
+  const _Hero({required this.media, required this.wide});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final library = LibraryStore.instance;
-    final title = titleFromJikan(anime);
+    final title = titleFromAnilist(media);
     final inList = library.isInMyList(title);
     final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight;
-    final genres = anime.genres
-        .take(4)
-        .map((g) => g.name.toLowerCase())
-        .join('  •  ');
+    final genres = media.genres.take(4).map((g) => g.toLowerCase()).join('  •  ');
 
     final buttons = Row(
       mainAxisSize: MainAxisSize.min,
@@ -423,10 +404,10 @@ class _Hero extends StatelessWidget {
           textAlign: wide ? TextAlign.start : TextAlign.center,
           style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
         ),
-        if (wide && anime.synopsis != null) ...[
+        if (wide && media.description != null) ...[
           const SizedBox(height: 12),
           Text(
-            anime.synopsis!,
+            media.description!,
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(
@@ -443,7 +424,7 @@ class _Hero extends StatelessWidget {
     final backdrop = [
       ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: Opacity(opacity: 0.6, child: NetImage(anime.imageUrl)),
+        child: Opacity(opacity: 0.6, child: NetImage(media.image)),
       ),
       DecoratedBox(
         decoration: BoxDecoration(
@@ -476,7 +457,7 @@ class _Hero extends StatelessWidget {
                   const SizedBox(width: 48),
                   AspectRatio(
                     aspectRatio: 2 / 3,
-                    child: _Poster(url: anime.imageUrl),
+                    child: _Poster(url: media.image),
                   ),
                 ],
               ),
@@ -505,7 +486,7 @@ class _Hero extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _Poster(url: anime.imageUrl),
+                      _Poster(url: media.image),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: const DecoratedBox(
@@ -557,33 +538,45 @@ class _Poster extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
+  final String error;
   final VoidCallback onRetry;
 
-  const _ErrorState({required this.onRetry});
+  const _ErrorState({required this.error, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.cloud_off,
-            size: 64,
-            color: Theme.of(context).colorScheme.error,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "couldn't reach myanimelist (jikan)",
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text('retry'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "couldn't reach anilist",
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('retry'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:jikan_api/jikan_api.dart' as jikan;
+import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/screens/title_screen.dart';
 import 'package:anigen/services/library_store.dart';
 
@@ -7,10 +7,11 @@ const crust = Color(0xFF000000);
 const mantle = Color(0xFF0A0A0A);
 const green = Color(0xFF46D369);
 
-LibraryTitle titleFromJikan(jikan.Anime anime) => LibraryTitle(
-  title: anime.titleEnglish ?? anime.title,
-  image: anime.imageUrl,
-  malId: anime.malId,
+LibraryTitle titleFromAnilist(AniListMedia media) => LibraryTitle(
+  title: media.title,
+  image: media.image,
+  anilistId: media.id,
+  malId: media.malId,
 );
 
 /// Opens the title page in the current tab.

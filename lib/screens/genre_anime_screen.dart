@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:jikan_api/jikan_api.dart';
-import 'package:anigen/providers/jikan_provider.dart';
+import 'package:anigen/models/anilist_media.dart';
+import 'package:anigen/providers/anilist_provider.dart';
 import 'package:anigen/widgets/title_cards.dart';
 
 class GenreAnimeScreen extends StatefulWidget {
-  final int genreId;
+  final String genre;
   final String genreName;
   const GenreAnimeScreen({
     super.key,
-    required this.genreId,
+    required this.genre,
     required this.genreName,
   });
 
@@ -17,8 +17,8 @@ class GenreAnimeScreen extends StatefulWidget {
 }
 
 class _GenreAnimeScreenState extends State<GenreAnimeScreen> {
-  final JikanProvider _jikanProvider = JikanProvider();
-  List<Anime> _animeList = [];
+  final AniListProvider _provider = AniListProvider();
+  List<AniListMedia> _animeList = [];
   bool _isLoading = true;
   String? _error;
 
@@ -35,14 +35,16 @@ class _GenreAnimeScreenState extends State<GenreAnimeScreen> {
     });
 
     try {
-      final anime = await _jikanProvider.getAnimeByGenre(widget.genreId);
+      final anime = await _provider.getAnimeByGenre(widget.genre);
+      if (!mounted) return;
       setState(() {
         _animeList = anime.take(50).toList();
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
       });
     }
@@ -106,11 +108,11 @@ class _GenreAnimeScreenState extends State<GenreAnimeScreen> {
                       itemBuilder: (context, index) {
                         final anime = _animeList[index];
                         return PosterCard(
-                          title: anime.titleEnglish ?? anime.title,
-                          image: anime.imageUrl,
+                          title: anime.title,
+                          image: anime.image,
                           width: double.infinity,
                           onTap: () =>
-                              openTitle(context, titleFromJikan(anime)),
+                              openTitle(context, titleFromAnilist(anime)),
                         );
                       },
                     );
