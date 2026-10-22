@@ -1,12 +1,10 @@
 name: Build Android APK
 
+# Runs only on pushes to main, which includes merged pull requests.
 on:
-  workflow_dispatch:
   push:
     branches:
-      - '**'
-    tags:
-      - 'v*'
+      - main
     paths-ignore:
       - '**.md'
       - 'windows/**'
@@ -15,7 +13,7 @@ on:
       - '.github/workflows/windows.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-${{ github.ref }}
@@ -91,10 +89,3 @@ jobs:
         with:
           name: Anigen-Android-${{ github.run_number }}
           path: dist/*.apk
-
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.apk
-          generate_release_notes: true
