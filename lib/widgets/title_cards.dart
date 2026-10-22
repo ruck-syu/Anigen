@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/screens/title_screen.dart';
+import 'package:anigen/services/anilist_account.dart';
 import 'package:anigen/services/library_store.dart';
 
 const crust = Color(0xFF000000);
@@ -27,29 +29,66 @@ void openTitle(
   );
 }
 
-/// The gradient wordmark.
+/// Asks before deleting an AniList entry, unless it's only "plan to watch"
+/// and has nothing to lose.
+Future<bool> confirmAniListRemoval(
+  BuildContext context,
+  AniListEntry entry,
+) async {
+  if (entry.status == 'PLANNING' && entry.progress == 0 && entry.score == 0) {
+    return true;
+  }
+  final progress = entry.progress > 0
+      ? ' and your progress (${entry.progress} eps)'
+      : '';
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('remove from anilist?'),
+      content: Text(
+        '${entry.title.title} is on your anilist as "${entry.label}". '
+        'Removing it deletes that entry$progress.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('remove'),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+/// The wordmark.
 class AnigenLogo extends StatelessWidget {
   final double size;
 
-  const AnigenLogo({super.key, this.size = 22});
+  /// A dark halo, so it reads over bright artwork.
+  final bool shadow;
+
+  const AnigenLogo({super.key, this.size = 22, this.shadow = false});
 
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (bounds) => const LinearGradient(
-        colors: [
-          Color(0xFFFF2A35),
-          Color(0xFFE50914),
-          Color(0xFFB20710),
-        ],
-      ).createShader(bounds),
-      child: Text(
-        'Anigen',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size,
-          fontWeight: FontWeight.w800,
-        ),
+    // Bebas Neue is condensed, so it's drawn larger to match the old width.
+    return Text(
+      'ANIGEN',
+      style: GoogleFonts.bebasNeue(
+        color: Theme.of(context).colorScheme.primary,
+        fontSize: size * 1.4,
+        letterSpacing: size * 0.06,
+        height: 1,
+        shadows: shadow
+            ? const [
+                Shadow(color: Colors.black, blurRadius: 2),
+                Shadow(color: Colors.black87, blurRadius: 10),
+              ]
+            : null,
       ),
     );
   }
@@ -82,19 +121,64 @@ class NetImage extends StatelessWidget {
       ),
     );
     if (url == null || url!.isEmpty) return placeholder;
-    return Image.network(
-      url!,
-      fit: fit,
-      alignment: alignment,
-      errorBuilder: (context, error, stackTrace) => placeholder,
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded) return child;
-        return AnimatedOpacity(
-          opacity: frame == null ? 0 : 1,
-          duration: const Duration(milliseconds: 250),
-          child: child,
+    // Decode at the size it's drawn at, not the source size, so scrolling
+    // rows of posters don't hold and sample full-resolution bitmaps.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final decodeWidth = constraints.hasBoundedWidth
+            ? (constraints.maxWidth * dpr).round()
+            : null;
+        return Image.network(
+          url!,
+          fit: fit,
+          alignment: alignment,
+          cacheWidth: decodeWidth != null && decodeWidth > 0
+              ? decodeWidth
+              : null,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (context, error, stackTrace) => placeholder,
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded) return child;
+            return AnimatedOpacity(
+              opacity: frame == null ? 0 : 1,
+              duration: const Duration(milliseconds: 250),
+              child: child,
+            );
+          },
         );
       },
+    );
+  }
+}
+
+/// A soft, blurred-looking backdrop. Instead of a live blur (re-rendered
+/// every frame while scrolling), the image is decoded tiny and stretched, so
+/// it costs no more to draw than a plain image.
+class SoftBackdrop extends StatelessWidget {
+  final String? url;
+  final int decodeWidth;
+  final double opacity;
+
+  const SoftBackdrop(
+    this.url, {
+    super.key,
+    this.decodeWidth = 48,
+    this.opacity = 0.6,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (url == null || url!.isEmpty) return const SizedBox.shrink();
+    return ClipRect(
+      child: Image.network(
+        url!,
+        fit: BoxFit.cover,
+        cacheWidth: decodeWidth,
+        filterQuality: FilterQuality.medium,
+        opacity: AlwaysStoppedAnimation(opacity),
+        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+      ),
     );
   }
 }

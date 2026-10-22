@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:anigen/screens/browse_screen.dart';
@@ -31,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen>
   );
   int _index = 0;
   bool _wasActive = false;
+  bool _wasExpanded = false;
 
   @override
   void initState() {
@@ -48,11 +48,18 @@ class _HomeScreenState extends State<HomeScreen>
   void _onPlaybackChanged() {
     if (_playback.isActive != _wasActive) {
       _wasActive = _playback.isActive;
-      if (!_playback.isActive) _sheet.value = 0;
+      if (!_playback.isActive) {
+        _sheet.value = 0;
+        _wasExpanded = false;
+      }
       setState(() {});
     }
     if (!_playback.isActive) return;
-    final target = _playback.isExpanded ? 1.0 : 0.0;
+    // Only react when expanded/minimized actually changes: playback notifies
+    // for plenty else, and mid-swipe that would yank the sheet away.
+    if (_playback.isExpanded == _wasExpanded) return;
+    _wasExpanded = _playback.isExpanded;
+    final target = _wasExpanded ? 1.0 : 0.0;
     if (_sheet.value != target) {
       _sheet.animateTo(target, curve: Curves.easeOutCubic);
     }
@@ -214,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen>
                   NavigationRailDestination(
                     icon: Icon(Icons.video_library_outlined),
                     selectedIcon: Icon(Icons.video_library),
-                    label: Text('my anigen'),
+                    label: Text('my list'),
                   ),
                 ],
               ),
@@ -259,50 +266,47 @@ class _BottomBar extends StatelessWidget {
     const items = [
       (Icons.home_outlined, Icons.home, 'home'),
       (Icons.search_outlined, Icons.search, 'search'),
-      (Icons.video_library_outlined, Icons.video_library, 'my anigen'),
+      (Icons.video_library_outlined, Icons.video_library, 'my list'),
     ];
     return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: EdgeInsets.only(bottom: bottomPadding),
-          decoration: BoxDecoration(
-            color: mantle.withValues(alpha: 0.85),
-            border: Border(
-              top: BorderSide(color: theme.colorScheme.surfaceContainerHighest),
-            ),
+      child: Container(
+        padding: EdgeInsets.only(bottom: bottomPadding),
+        decoration: BoxDecoration(
+          color: mantle.withValues(alpha: 0.96),
+          border: Border(
+            top: BorderSide(color: theme.colorScheme.surfaceContainerHighest),
           ),
-          child: Row(
-            children: [
-              for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: InkResponse(
-                    onTap: () => onSelect(i),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          i == index ? items[i].$2 : items[i].$1,
+        ),
+        child: Row(
+          children: [
+            for (var i = 0; i < items.length; i++)
+              Expanded(
+                child: InkResponse(
+                  onTap: () => onSelect(i),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        i == index ? items[i].$2 : items[i].$1,
+                        color: i == index
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        items[i].$3,
+                        style: theme.textTheme.labelSmall?.copyWith(
                           color: i == index
                               ? theme.colorScheme.onSurface
                               : theme.colorScheme.onSurfaceVariant,
+                          fontWeight: i == index ? FontWeight.w700 : null,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          items[i].$3,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: i == index
-                                ? theme.colorScheme.onSurface
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontWeight: i == index ? FontWeight.w700 : null,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

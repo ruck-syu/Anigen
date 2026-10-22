@@ -1,9 +1,9 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/models/anime.dart';
 import 'package:anigen/providers/anilist_provider.dart';
 import 'package:anigen/providers/anime_provider.dart';
+import 'package:anigen/services/anilist_account.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/services/playback_controller.dart';
 import 'package:anigen/widgets/title_cards.dart';
@@ -30,11 +30,12 @@ class _TitleScreenState extends State<TitleScreen> {
 
   AniListMedia? _info;
   List<AniListMedia> _recommendations = [];
+  List<AniListMedia> _seasons = [];
   LibraryTitle? _source;
   List<Episode>? _episodes;
   String? _sourceError;
   bool _descriptionExpanded = false;
-  bool _showEpisodes = true;
+  _Tab _tab = _Tab.episodes;
 
   int? get _anilistId => widget.title.anilistId ?? _info?.id;
 
@@ -65,9 +66,19 @@ class _TitleScreenState extends State<TitleScreen> {
         // The page still works from the title we were given
       }
     }
+    if (_anilistId != null) _loadSeasons(_anilistId!);
     await _resolveSource();
     if (anilistId != null || malId != null) {
       _loadRecommendations(anilistId: anilistId, malId: malId);
+    }
+  }
+
+  Future<void> _loadSeasons(int id) async {
+    try {
+      final seasons = await _anilist.getSeasons(id);
+      if (mounted) setState(() => _seasons = seasons);
+    } catch (e) {
+      // Optional section
     }
   }
 
@@ -190,12 +201,42 @@ class _TitleScreenState extends State<TitleScreen> {
     _playback.play(title: _title, episodes: _episodes!, episode: target);
   }
 
-  void _toggleMyList() {
-    final added = _library.toggleMyList(_title);
+  void _toggleFavourite() {
+    final added = _library.toggleFavourite(_title);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(added ? 'added to my list' : 'removed from my list'),
+        content: Text(
+          added ? 'added to favourites' : 'removed from favourites',
+        ),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// AniList status, progress, score and dates, for signed-in users.
+  void _openTracking() {
+    final account = AniListAccount.instance;
+    if (!account.isSignedIn || _anilistId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            account.isSignedIn
+                ? 'this show isn\'t on anilist'
+                : 'sign in to anilist in my list to track shows',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _TrackingSheet(
+        title: _title,
+        entry: account.entryFor(_anilistId),
+        totalEpisodes: _info?.episodes,
       ),
     );
   }
@@ -223,10 +264,11 @@ class _TitleScreenState extends State<TitleScreen> {
                 ),
               ),
             ),
-            if (_showEpisodes)
-              ..._buildEpisodes()
-            else
-              _buildMoreLikeThis(width),
+            ...switch (_tab) {
+              _Tab.episodes => _buildEpisodes(),
+              _Tab.seasons => [_buildSeasons()],
+              _Tab.moreLikeThis => [_buildMoreLikeThis(width)],
+            },
             SliverToBoxAdapter(
               child: SizedBox(height: bottomInset(context) + 24),
             ),
@@ -246,10 +288,7 @@ class _TitleScreenState extends State<TitleScreen> {
         fit: StackFit.expand,
         children: [
           // Blurred, zoomed poster as the backdrop
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: Opacity(opacity: 0.55, child: NetImage(image)),
-          ),
+          SoftBackdrop(image, decodeWidth: 24, opacity: 0.55),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -422,10 +461,20 @@ class _TitleScreenState extends State<TitleScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: theme.colorScheme.error),
             ),
-            TextButton.icon(
-              onPressed: _resolveSource,
-              icon: const Icon(Icons.refresh),
-              label: const Text('retry'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton.icon(
+                  onPressed: _resolveSource,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('retry'),
+                ),
+                TextButton.icon(
+                  onPressed: _changeSource,
+                  icon: const Icon(Icons.swap_horiz),
+                  label: const Text('pick source'),
+                ),
+              ],
             ),
           ],
           if (info?.description != null) ...[
@@ -456,50 +505,59 @@ class _TitleScreenState extends State<TitleScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _ActionIcon(
-                icon: _library.isInMyList(_title) ? Icons.check : Icons.add,
-                label: 'my list',
-                onTap: _toggleMyList,
+                icon: _library.isFavourite(_title)
+                    ? Icons.favorite
+                    : Icons.favorite_border,
+                label: 'favourite',
+                onTap: _toggleFavourite,
               ),
-              _ActionIcon(
-                icon: Icons.swap_horiz,
-                label: 'source',
-                onTap: _changeSource,
+              ListenableBuilder(
+                listenable: AniListAccount.instance,
+                builder: (context, _) {
+                  final account = AniListAccount.instance;
+                  final tracked = account.entryFor(_anilistId) != null;
+                  return _ActionIcon(
+                    icon: tracked
+                        ? Icons.playlist_add_check
+                        : Icons.playlist_add,
+                    label: 'tracking',
+                    color: !account.isSignedIn
+                        ? theme.disabledColor
+                        : tracked
+                        ? theme.colorScheme.primary
+                        : null,
+                    onTap: _openTracking,
+                  );
+                },
               ),
-              if (history != null)
-                _ActionIcon(
-                  icon: Icons.history,
-                  label: 'clear progress',
-                  onTap: () => _library.removeFromHistory(_source!.animeId!),
-                ),
             ],
           ),
-          if (_source != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'source: ${_source!.title}',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
           const SizedBox(height: 12),
           const Divider(height: 1),
-          Row(
-            children: [
-              _TabLabel(
-                label: 'episodes',
-                selected: _showEpisodes,
-                onTap: () => setState(() => _showEpisodes = true),
-              ),
-              if (_anilistId != null || _malId != null)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
                 _TabLabel(
-                  label: 'more like this',
-                  selected: !_showEpisodes,
-                  onTap: () => setState(() => _showEpisodes = false),
+                  label: 'episodes',
+                  selected: _tab == _Tab.episodes,
+                  onTap: () => setState(() => _tab = _Tab.episodes),
                 ),
-            ],
+                // Only worth a tab when there is more than this one title
+                if (_seasons.length > 1)
+                  _TabLabel(
+                    label: 'seasons',
+                    selected: _tab == _Tab.seasons,
+                    onTap: () => setState(() => _tab = _Tab.seasons),
+                  ),
+                if (_anilistId != null || _malId != null)
+                  _TabLabel(
+                    label: 'more like this',
+                    selected: _tab == _Tab.moreLikeThis,
+                    onTap: () => setState(() => _tab = _Tab.moreLikeThis),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -553,6 +611,28 @@ class _TitleScreenState extends State<TitleScreen> {
         },
       ),
     ];
+  }
+
+  Widget _buildSeasons() {
+    return SliverList.builder(
+      itemCount: _seasons.length,
+      itemBuilder: (context, index) {
+        final media = _seasons[index];
+        final isCurrent = media.id == _anilistId;
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1000),
+            child: _SeasonTile(
+              media: media,
+              isCurrent: isCurrent,
+              onTap: isCurrent
+                  ? null
+                  : () => openTitle(context, titleFromAnilist(media)),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildMoreLikeThis(double width) {
@@ -699,6 +779,358 @@ class EpisodeTile extends StatelessWidget {
   }
 }
 
+enum _Tab { episodes, seasons, moreLikeThis }
+
+/// Edits your AniList entry: status, progress, score and dates.
+class _TrackingSheet extends StatefulWidget {
+  final LibraryTitle title;
+  final AniListEntry? entry;
+  final int? totalEpisodes;
+
+  const _TrackingSheet({
+    required this.title,
+    required this.entry,
+    required this.totalEpisodes,
+  });
+
+  @override
+  State<_TrackingSheet> createState() => _TrackingSheetState();
+}
+
+class _TrackingSheetState extends State<_TrackingSheet> {
+  late String _status = widget.entry?.status ?? 'PLANNING';
+  late int _progress = widget.entry?.progress ?? 0;
+  late double _score = widget.entry?.score ?? 0;
+  late DateTime? _startedAt = widget.entry?.startedAt;
+  late DateTime? _completedAt = widget.entry?.completedAt;
+  bool _saving = false;
+
+  int? get _total => widget.totalEpisodes;
+
+  /// Fill in what the status implies, like AniList's own editor does.
+  void _setStatus(String status) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    setState(() {
+      _status = status;
+      if (status == 'CURRENT' || status == 'REPEATING') {
+        _startedAt ??= today;
+      }
+      if (status == 'COMPLETED') {
+        _startedAt ??= today;
+        _completedAt ??= today;
+        if (_total != null) _progress = _total!;
+      }
+    });
+  }
+
+  void _setProgress(int value) {
+    final total = _total;
+    setState(() {
+      _progress = value.clamp(0, total ?? 9999);
+      if (_progress > 0 && _status == 'PLANNING') _setStatus('CURRENT');
+      if (total != null && _progress == total && _status != 'COMPLETED') {
+        _setStatus('COMPLETED');
+      }
+    });
+  }
+
+  Future<void> _pickDate(bool started) async {
+    final current = started ? _startedAt : _completedAt;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? DateTime.now(),
+      firstDate: DateTime(1940),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked == null) return;
+    setState(() => started ? _startedAt = picked : _completedAt = picked);
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    final account = AniListAccount.instance;
+    final ok = await account.saveEntry(
+      widget.title,
+      status: _status,
+      progress: _progress,
+      score: _score,
+      startedAt: _startedAt,
+      completedAt: _completedAt,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) {
+      Navigator.of(context).pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(account.error ?? 'couldn\'t save to anilist')),
+      );
+    }
+  }
+
+  Future<void> _remove() async {
+    final entry = widget.entry;
+    if (entry == null || !await confirmAniListRemoval(context, entry)) return;
+    setState(() => _saving = true);
+    final account = AniListAccount.instance;
+    final ok = await account.deleteEntry(widget.title);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) {
+      Navigator.of(context).pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(account.error ?? 'couldn\'t remove it')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = _total;
+    final label = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    Widget dateField(String name, DateTime? value, bool started) => Expanded(
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: name,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.fromLTRB(12, 4, 0, 4),
+          suffixIcon: value == null
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'clear',
+                  onPressed: () => setState(
+                    () => started ? _startedAt = null : _completedAt = null,
+                  ),
+                ),
+        ),
+        child: InkWell(
+          onTap: () => _pickDate(started),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text(_formatDate(value) ?? 'not set'),
+          ),
+        ),
+      ),
+    );
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('status', style: label),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final status in AniListEntry.statuses)
+                  ChoiceChip(
+                    label: Text(AniListEntry.labelFor(status)),
+                    selected: _status == status,
+                    onSelected: (_) => _setStatus(status),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('progress', style: label),
+            Row(
+              children: [
+                IconButton.outlined(
+                  icon: const Icon(Icons.remove),
+                  onPressed: _progress > 0
+                      ? () => _setProgress(_progress - 1)
+                      : null,
+                ),
+                Expanded(
+                  child: Text(
+                    '$_progress${total != null ? ' / $total' : ''} eps',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                IconButton.outlined(
+                  icon: const Icon(Icons.add),
+                  onPressed: total == null || _progress < total
+                      ? () => _setProgress(_progress + 1)
+                      : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text('score', style: label),
+                const Spacer(),
+                Text(
+                  _score > 0 ? '★ ${_formatScore(_score)} / 10' : 'no score',
+                  style: theme.textTheme.labelLarge,
+                ),
+              ],
+            ),
+            Slider(
+              value: _score,
+              max: 10,
+              divisions: 20,
+              label: _score > 0 ? _formatScore(_score) : 'none',
+              onChanged: (value) => setState(() => _score = value),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                dateField('started', _startedAt, true),
+                const SizedBox(width: 12),
+                dateField('finished', _completedAt, false),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                if (widget.entry != null)
+                  TextButton.icon(
+                    onPressed: _saving ? null : _remove,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('remove'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                    ),
+                  ),
+                const Spacer(),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('save'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatScore(double score) => score == score.roundToDouble()
+    ? '${score.round()}'
+    : score.toStringAsFixed(1);
+
+const _months = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+];
+
+String? _formatDate(DateTime? date) =>
+    date == null ? null : '${date.day} ${_months[date.month - 1]} ${date.year}';
+
+/// One title in the show's prequel and sequel chain.
+class _SeasonTile extends StatelessWidget {
+  final AniListMedia media;
+  final bool isCurrent;
+  final VoidCallback? onTap;
+
+  const _SeasonTile({
+    required this.media,
+    required this.isCurrent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final details = [
+      if (media.format != null)
+        media.format!.toLowerCase().replaceAll('_', ' '),
+      if (media.seasonYear != null) '${media.seasonYear}',
+      if (media.episodes != null) '${media.episodes} eps',
+      if (media.isAiring) 'airing',
+      if (media.status == 'NOT_YET_RELEASED') 'upcoming',
+    ];
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: isCurrent
+            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+            : null,
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 56,
+                height: 84,
+                child: NetImage(media.image),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    media.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: isCurrent ? theme.colorScheme.primary : null,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isCurrent
+                        ? ['current', ...details].join(' · ')
+                        : details.join(' · '),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!isCurrent)
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Badge extends StatelessWidget {
   final String text;
 
@@ -750,11 +1182,13 @@ class _ActionIcon extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? color;
 
   const _ActionIcon({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.color,
   });
 
   @override
@@ -766,9 +1200,14 @@ class _ActionIcon extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Column(
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.onSurface),
+            Icon(icon, color: color ?? Theme.of(context).colorScheme.onSurface),
             const SizedBox(height: 4),
-            Text(label, style: Theme.of(context).textTheme.labelSmall),
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: color),
+            ),
           ],
         ),
       ),

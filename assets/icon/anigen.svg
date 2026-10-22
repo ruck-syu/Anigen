@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Anigen app icon: an arched "A" turned 90° left, theme red on black.
+     108x108 matches the Android adaptive icon grid; the glyph stays inside
+     the 66-unit safe zone so every launcher mask keeps it whole. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+  <rect width="108" height="108" fill="#000000"/>
+  <g transform="rotate(-90 54 54)" fill="none" stroke="#E50914" stroke-width="9">
+    <path d="M40,74 V52 A14,14 0 0 1 68,52 V74"/>
+    <path d="M40,61 H68"/>
+  </g>
+</svg>

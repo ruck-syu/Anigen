@@ -40,6 +40,8 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
   double _dragExtent = 1;
 
   void _onDragStart(DragStartDetails details) {
+    // Take over from any settle animation still running.
+    widget.sheet.stop();
     _dragExtent =
         (context.size?.height ?? 600) - miniPlayerHeight - widget.miniBottom;
   }
@@ -48,12 +50,20 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
     widget.sheet.value -= details.primaryDelta! / _dragExtent;
   }
 
+  /// Settles with the finger's speed, so a flick carries on instead of
+  /// stopping dead and restarting at a fixed pace.
   void _onDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final expand = velocity.abs() > 400
-        ? velocity < 0
+    final velocity = -(details.primaryVelocity ?? 0) / _dragExtent;
+    final expand = velocity.abs() > 0.6
+        ? velocity > 0
         : widget.sheet.value > 0.5;
     expand ? _playback.expand() : _playback.minimize();
+    // Replaces the fixed-pace animation that may have just started.
+    widget.sheet.fling(
+      velocity: expand
+          ? velocity.clamp(1.5, double.infinity)
+          : velocity.clamp(double.negativeInfinity, -1.5),
+    );
   }
 
   @override
@@ -145,7 +155,15 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          _PlayerVideo(key: _videoKey, expanded: expanded),
+                          RepaintBoundary(
+                            child: _PlayerVideo(
+                              key: _videoKey,
+                              // Follows the player's state rather than the
+                              // drag, so controls don't flicker mid-swipe.
+                              expanded: _playback.isExpanded,
+                              edgeToEdge: landscapePhone,
+                            ),
+                          ),
                           if (_playback.isLoading || _playback.error != null)
                             _LoadingOrError(compact: !expanded),
                         ],
@@ -228,7 +246,15 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
 class _PlayerVideo extends StatelessWidget {
   final bool expanded;
 
-  const _PlayerVideo({super.key, required this.expanded});
+  /// The video fills the screen, so controls keep clear of the edges where
+  /// Android's back and home swipes live.
+  final bool edgeToEdge;
+
+  const _PlayerVideo({
+    super.key,
+    required this.expanded,
+    required this.edgeToEdge,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -283,16 +309,30 @@ class _PlayerVideo extends StatelessWidget {
       const Spacer(),
       const MaterialFullscreenButton(),
     ];
-    final theme = MaterialVideoControlsThemeData(
+    MaterialVideoControlsThemeData controlsTheme(
+      List<Widget> topButtonBar, {
+      required bool edgeSafe,
+    }) => MaterialVideoControlsThemeData(
       seekOnDoubleTap: true,
       volumeGesture: false,
       brightnessGesture: false,
       speedUpOnLongPress: true,
       seekBarPositionColor: Theme.of(context).colorScheme.error,
       seekBarThumbColor: Theme.of(context).colorScheme.error,
-      topButtonBar: topBar,
+      topButtonBar: topButtonBar,
       primaryButtonBar: primary,
       bottomButtonBar: bottomBar,
+      // Edge to edge, keep clear of Android's back and home swipe areas and
+      // give the seek bar a taller touch target.
+      padding: edgeSafe ? const EdgeInsets.fromLTRB(24, 12, 24, 20) : null,
+      topButtonBarMargin: EdgeInsets.symmetric(horizontal: edgeSafe ? 8 : 16),
+      seekBarMargin: edgeSafe
+          ? const EdgeInsets.symmetric(horizontal: 8)
+          : EdgeInsets.zero,
+      seekBarContainerHeight: edgeSafe ? 48 : 36,
+      bottomButtonBarMargin: edgeSafe
+          ? const EdgeInsets.symmetric(horizontal: 8)
+          : const EdgeInsets.only(left: 16, right: 8),
     );
     final desktopTheme = MaterialDesktopVideoControlsThemeData(
       seekBarPositionColor: Theme.of(context).colorScheme.error,
@@ -316,8 +356,8 @@ class _PlayerVideo extends StatelessWidget {
     );
 
     return MaterialVideoControlsTheme(
-      normal: theme,
-      fullscreen: theme.copyWith(topButtonBar: fullscreenTopBar),
+      normal: controlsTheme(topBar, edgeSafe: edgeToEdge),
+      fullscreen: controlsTheme(fullscreenTopBar, edgeSafe: true),
       child: MaterialDesktopVideoControlsTheme(
         normal: desktopTheme,
         fullscreen: desktopTheme.copyWith(topButtonBar: fullscreenTopBar),
@@ -649,9 +689,11 @@ class _Details extends StatelessWidget {
                           : playback.playNext,
                     ),
                     _Pill(
-                      icon: library.isInMyList(title) ? Icons.check : Icons.add,
-                      label: 'my list',
-                      onTap: () => library.toggleMyList(title),
+                      icon: library.isFavourite(title)
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      label: 'favourite',
+                      onTap: () => library.toggleFavourite(title),
                     ),
                     _Pill(
                       icon: Icons.speed,

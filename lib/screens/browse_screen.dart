@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/providers/anilist_provider.dart';
@@ -6,7 +6,7 @@ import 'package:anigen/screens/genre_anime_screen.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/title_cards.dart';
 
-/// Home tab: a featured title up top, then rows of shows.
+/// Home tab: featured titles up top, then rows of shows.
 class BrowseScreen extends StatefulWidget {
   const BrowseScreen({super.key});
 
@@ -75,14 +75,15 @@ class _BrowseScreenState extends State<BrowseScreen> {
     }
   }
 
-  AniListMedia? get _featured {
+  List<AniListMedia> get _featured {
     final candidates = (_season.isNotEmpty ? _season : _top)
         .where((a) => a.description != null && (a.score ?? 0) > 0)
-        .take(6)
+        .take(8)
         .toList();
-    if (candidates.isEmpty) return null;
-    // A different pick each day
-    return candidates[DateTime.now().day % candidates.length];
+    if (candidates.isEmpty) return candidates;
+    // A different one first each day
+    final start = DateTime.now().day % candidates.length;
+    return [...candidates.skip(start), ...candidates.take(start)];
   }
 
   @override
@@ -118,7 +119,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
                   controller: _scroll,
                   slivers: [
                     SliverToBoxAdapter(
-                      child: _featured == null
+                      child: _featured.isEmpty
                           ? SizedBox(
                               height: 420,
                               child: Center(
@@ -127,12 +128,11 @@ class _BrowseScreenState extends State<BrowseScreen> {
                                     : const SizedBox.shrink(),
                               ),
                             )
-                          : _Hero(media: _featured!, wide: wide),
+                          : _HeroCarousel(items: _featured, wide: wide),
                     ),
                     SliverList.list(
                       children: [
                         _continueWatchingRow(padding, wide),
-                        _myListRow(padding, posterWidth, posterRowHeight),
                         if (_top.isNotEmpty)
                           CardRow(
                             title: 'top 10 anime',
@@ -226,26 +226,18 @@ class _BrowseScreenState extends State<BrowseScreen> {
             top: 0,
             child: ValueListenableBuilder<double>(
               valueListenable: _barOpacity,
-              builder: (context, opacity, child) => ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: 12 * opacity,
-                    sigmaY: 12 * opacity,
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.6 + 0.3 * opacity),
-                          mantle.withValues(alpha: opacity * 0.9),
-                        ],
-                      ),
-                    ),
-                    child: child,
+              builder: (context, opacity, child) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.7 + 0.25 * opacity),
+                      mantle.withValues(alpha: opacity * 0.95),
+                    ],
                   ),
                 ),
+                child: child,
               ),
               child: SafeArea(
                 bottom: false,
@@ -253,7 +245,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
                   height: kToolbarHeight,
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: padding),
-                    child: const Row(children: [AnigenLogo(size: 22)]),
+                    child: const Row(
+                      children: [AnigenLogo(size: 22, shadow: true)],
+                    ),
                   ),
                 ),
               ),
@@ -285,22 +279,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
     );
   }
 
-  Widget _myListRow(double padding, double posterWidth, double height) {
-    final items = LibraryStore.instance.myList;
-    return CardRow(
-      title: 'my list',
-      padding: padding,
-      height: height,
-      itemCount: items.length,
-      itemBuilder: (context, i) => PosterCard(
-        title: items[i].title,
-        image: items[i].image,
-        width: posterWidth,
-        onTap: () => openTitle(context, items[i]),
-      ),
-    );
-  }
-
   Widget _mediaRow(
     String title,
     List<AniListMedia> items,
@@ -323,7 +301,175 @@ class _BrowseScreenState extends State<BrowseScreen> {
   }
 }
 
-/// The big featured title at the top of home.
+/// The featured titles at the top of home: swipe through them, and they
+/// move on by themselves until you do.
+class _HeroCarousel extends StatefulWidget {
+  final List<AniListMedia> items;
+  final bool wide;
+
+  const _HeroCarousel({required this.items, required this.wide});
+
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  static const _interval = Duration(seconds: 8);
+  final _controller = PageController();
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _restartTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _restartTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(_interval, (_) {
+      // Not while another tab or the player covers home.
+      if (!mounted || !TickerMode.valuesOf(context).enabled) return;
+      if (!_controller.hasClients || widget.items.length < 2) return;
+      final next = (_page + 1) % widget.items.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight;
+    final width = MediaQuery.sizeOf(context).width;
+    final posterWidth = (width - 64).clamp(0.0, 340.0);
+    const dotsHeight = 22.0;
+    final height = widget.wide
+        ? 520.0
+        : topPadding + 8 + posterWidth * 3 / 2 + 8 + dotsHeight;
+
+    final background = Theme.of(context).scaffoldBackgroundColor;
+    return SizedBox(
+      height: height,
+      child: Stack(
+        children: [
+          // One backdrop behind all the cards that cross-fades as you swipe,
+          // so there's no seam between them.
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final position =
+                    _controller.hasClients &&
+                        _controller.position.haveDimensions
+                    ? _controller.page!
+                    : _page.toDouble();
+                final index = position.floor().clamp(0, items.length - 1);
+                final t = (position - index).clamp(0.0, 1.0);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _Backdrop(key: ValueKey(index), media: items[index]),
+                    if (t > 0 && index + 1 < items.length)
+                      Opacity(
+                        key: ValueKey(index + 1),
+                        opacity: t,
+                        child: _Backdrop(media: items[index + 1]),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0, 0.6, 1],
+                  colors: [
+                    Colors.transparent,
+                    background.withValues(alpha: 0.6),
+                    background,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              // Swiping by hand resets the countdown.
+              if (notification is ScrollStartNotification &&
+                  notification.dragDetails != null) {
+                _restartTimer();
+              }
+              return false;
+            },
+            child: PageView.builder(
+              controller: _controller,
+              itemCount: items.length,
+              onPageChanged: (page) => setState(() => _page = page),
+              itemBuilder: (context, i) => Padding(
+                padding: EdgeInsets.only(bottom: widget.wide ? 0 : dotsHeight),
+                child: _Hero(media: items[i], wide: widget.wide),
+              ),
+            ),
+          ),
+          if (items.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: widget.wide ? 16 : 4,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: i == _page ? 18 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: i == _page
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A featured title's art, soft and wide. AniList's landscape banner when
+/// there is one, so it doesn't have to be a stretched portrait.
+class _Backdrop extends StatelessWidget {
+  final AniListMedia media;
+
+  const _Backdrop({super.key, required this.media});
+
+  @override
+  Widget build(BuildContext context) => media.banner != null
+      ? SoftBackdrop(media.banner, decodeWidth: 160)
+      : SoftBackdrop(media.image, decodeWidth: 24);
+}
+
+/// One featured title, drawn over the carousel's backdrop.
 class _Hero extends StatelessWidget {
   final AniListMedia media;
   final bool wide;
@@ -335,9 +481,12 @@ class _Hero extends StatelessWidget {
     final theme = Theme.of(context);
     final library = LibraryStore.instance;
     final title = titleFromAnilist(media);
-    final inList = library.isInMyList(title);
+    final favourite = library.isFavourite(title);
     final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight;
-    final genres = media.genres.take(4).map((g) => g.toLowerCase()).join('  •  ');
+    final genres = media.genres
+        .take(4)
+        .map((g) => g.toLowerCase())
+        .join('  •  ');
 
     final buttons = Row(
       mainAxisSize: MainAxisSize.min,
@@ -368,9 +517,9 @@ class _Hero extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
             ),
           ),
-          onPressed: () => library.toggleMyList(title),
-          icon: Icon(inList ? Icons.check : Icons.add),
-          label: const Text('my list'),
+          onPressed: () => library.toggleFavourite(title),
+          icon: Icon(favourite ? Icons.favorite : Icons.favorite_border),
+          label: const Text('favourite'),
         ),
         const SizedBox(width: 4),
         IconButton(
@@ -421,34 +570,12 @@ class _Hero extends StatelessWidget {
       ],
     );
 
-    final backdrop = [
-      ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: Opacity(opacity: 0.6, child: NetImage(media.image)),
-      ),
-      DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0, 0.6, 1],
-            colors: [
-              Colors.transparent,
-              theme.scaffoldBackgroundColor.withValues(alpha: 0.6),
-              theme.scaffoldBackgroundColor,
-            ],
-          ),
-        ),
-      ),
-    ];
-
     if (wide) {
       return SizedBox(
         height: 520,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ...backdrop,
             Padding(
               padding: EdgeInsets.fromLTRB(48, topPadding + 16, 48, 32),
               child: Row(
@@ -471,9 +598,6 @@ class _Hero extends StatelessWidget {
     final posterWidth = (width - 64).clamp(0.0, 340.0);
     return Stack(
       children: [
-        Positioned.fill(
-          child: Stack(fit: StackFit.expand, children: backdrop),
-        ),
         Padding(
           padding: EdgeInsets.fromLTRB(16, topPadding + 8, 16, 8),
           child: Center(

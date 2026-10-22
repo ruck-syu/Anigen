@@ -11,8 +11,12 @@ class AniListMedia {
   /// The original (usually Japanese) title, shown as a subtitle.
   final String? titleRomaji;
 
+  /// The biggest poster AniList has, 460x690.
   final String? image;
+
+  /// Landscape art, 1900x400. Used as the backdrop behind the hero.
   final String? banner;
+
   final String? description;
 
   /// Average user score, 0-100.
@@ -72,7 +76,7 @@ class AniListMedia {
       malId: json['idMal'] as int?,
       title: english ?? romaji ?? 'unknown',
       titleRomaji: romaji,
-      image: cover['large'] as String?,
+      image: cover['extraLarge'] as String?,
       banner: json['bannerImage'] as String?,
       description: json['description'] as String?,
       score: json['averageScore'] as int?,

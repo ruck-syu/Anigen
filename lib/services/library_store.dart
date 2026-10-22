@@ -100,24 +100,29 @@ class HistoryEntry {
   };
 }
 
-/// Watch history, My List and playback settings, persisted locally.
+/// Watch history, favourites and playback settings, persisted locally.
 class LibraryStore extends ChangeNotifier {
   LibraryStore._();
   static final LibraryStore instance = LibraryStore._();
 
   static const _historyKey = 'library_history';
-  static const _myListKey = 'library_my_list';
+  static const _favouritesKey = 'library_my_list';
+  // Cached AniList list from when it stood in for the local list.
+  static const _oldRemoteListKey = 'library_anilist_list';
   static const _sourcesKey = 'library_sources';
   static const _autoplayKey = 'settings_autoplay';
   static const _autoSkipKey = 'settings_auto_skip_intro';
 
   SharedPreferences? _prefs;
   final Map<String, HistoryEntry> _history = {};
-  final List<LibraryTitle> _myList = [];
+  final List<LibraryTitle> _favourites = [];
   // malId -> hianime title picked for it
   final Map<int, LibraryTitle> _sources = {};
   bool autoplay = true;
   bool autoSkipIntro = false;
+
+  /// Hook for AniList progress sync, so the library doesn't depend on it.
+  void Function(LibraryTitle title, String episode)? onEpisodeWatched;
 
   Future<void> load() async {
     try {
@@ -128,9 +133,11 @@ class LibraryStore extends ChangeNotifier {
           _history[e.key] = HistoryEntry.fromJson(e.value);
         }
       }
-      for (final item in prefs.getStringList(_myListKey) ?? const <String>[]) {
-        _myList.add(LibraryTitle.fromJson(jsonDecode(item)));
+      for (final item
+          in prefs.getStringList(_favouritesKey) ?? const <String>[]) {
+        _favourites.add(LibraryTitle.fromJson(jsonDecode(item)));
       }
+      prefs.remove(_oldRemoteListKey);
       final sources = prefs.getString(_sourcesKey);
       if (sources != null) {
         for (final e in (jsonDecode(sources) as Map<String, dynamic>).entries) {
@@ -152,7 +159,7 @@ class LibraryStore extends ChangeNotifier {
     return entries;
   }
 
-  List<LibraryTitle> get myList => List.unmodifiable(_myList);
+  List<LibraryTitle> get favourites => List.unmodifiable(_favourites);
 
   HistoryEntry? historyFor(String? animeId) =>
       animeId == null ? null : _history[animeId];
@@ -189,20 +196,22 @@ class LibraryStore extends ChangeNotifier {
     final animeId = title.animeId;
     if (animeId == null) return;
     final previous = _history[animeId];
+    final progress = EpisodeProgress(
+      position.inMilliseconds,
+      duration.inMilliseconds,
+    );
+    final wasWatched = previous?.episodes[episode]?.isWatched ?? false;
     _history[animeId] = HistoryEntry(
       title: previous == null ? title : title.mergedWith(previous.title),
       lastEpisode: episode,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
-      episodes: {
-        ...?previous?.episodes,
-        episode: EpisodeProgress(
-          position.inMilliseconds,
-          duration.inMilliseconds,
-        ),
-      },
+      episodes: {...?previous?.episodes, episode: progress},
     );
     _saveHistory();
     notifyListeners();
+    if (progress.isWatched && !wasWatched) {
+      onEpisodeWatched?.call(_history[animeId]!.title, episode);
+    }
   }
 
   void removeFromHistory(String animeId) {
@@ -219,25 +228,26 @@ class LibraryStore extends ChangeNotifier {
     );
   }
 
-  bool isInMyList(LibraryTitle title) => _indexInMyList(title) != -1;
+  bool isFavourite(LibraryTitle title) => _indexOf(title) != -1;
 
-  int _indexInMyList(LibraryTitle title) => _myList.indexWhere(
+  int _indexOf(LibraryTitle title) => _favourites.indexWhere(
     (t) =>
+        (title.anilistId != null && t.anilistId == title.anilistId) ||
         (title.animeId != null && t.animeId == title.animeId) ||
         (title.malId != null && t.malId == title.malId),
   );
 
-  /// Returns whether the title is in My List afterwards.
-  bool toggleMyList(LibraryTitle title) {
-    final index = _indexInMyList(title);
+  /// Returns whether the title is a favourite afterwards.
+  bool toggleFavourite(LibraryTitle title) {
+    final index = _indexOf(title);
     if (index == -1) {
-      _myList.insert(0, title);
+      _favourites.insert(0, title);
     } else {
-      _myList.removeAt(index);
+      _favourites.removeAt(index);
     }
     _prefs?.setStringList(
-      _myListKey,
-      _myList.map((t) => jsonEncode(t.toJson())).toList(),
+      _favouritesKey,
+      _favourites.map((t) => jsonEncode(t.toJson())).toList(),
     );
     notifyListeners();
     return index == -1;
