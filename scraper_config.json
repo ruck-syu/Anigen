@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "configVersion": 1,
+  "aniCliVersion": "5.1.5",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "baseUrl": "https://hianime.at",
+  "searchUrl": "{base}/search?keyword={query}",
+  "episodesUrl": "{base}/api/theme/episode/list/{id}",
+  "serversUrl": "{base}/api/theme/episode/servers?episodeId={episodeId}",
+  "searchItemSelector": "#main-content .flw-item",
+  "searchTitleSelector": ".film-name a",
+  "searchPosterSelector": "img.film-poster-img",
+  "episodeItemSelector": ".ep-item",
+  "serverItemSelector": ".server-item",
+  "serverNames": ["ZokoAnime"],
+  "translationType": "sub",
+  "embedBlobPattern": "window\\.__P=\"([^\"]*)\"",
+  "embedXorKey": "otaku-embed-v1"
+}

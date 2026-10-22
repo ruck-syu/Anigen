@@ -1,0 +1,903 @@
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:jikan_api/jikan_api.dart' as jikan;
+import 'package:anigen/models/anime.dart';
+import 'package:anigen/providers/anime_provider.dart';
+import 'package:anigen/services/library_store.dart';
+import 'package:anigen/services/playback_controller.dart';
+import 'package:anigen/widgets/title_cards.dart';
+
+/// Details page for a show. Works from a MyAnimeList id (metadata from
+/// Jikan, video source found by searching hianime) or from a hianime id.
+class TitleScreen extends StatefulWidget {
+  final LibraryTitle title;
+
+  /// Start playing (or resume) as soon as the episodes are known.
+  final bool autoplay;
+
+  const TitleScreen({super.key, required this.title, this.autoplay = false});
+
+  @override
+  State<TitleScreen> createState() => _TitleScreenState();
+}
+
+class _TitleScreenState extends State<TitleScreen> {
+  final _library = LibraryStore.instance;
+  final _playback = PlaybackController.instance;
+
+  jikan.Anime? _info;
+  List<jikan.Recommendation> _recommendations = [];
+  LibraryTitle? _source;
+  List<Episode>? _episodes;
+  String? _sourceError;
+  bool _synopsisExpanded = false;
+  bool _showEpisodes = true;
+
+  int? get _malId => widget.title.malId ?? _info?.malId;
+
+  LibraryTitle get _title => LibraryTitle(
+    title: _info?.titleEnglish ?? _info?.title ?? widget.title.title,
+    image: _info?.imageUrl ?? widget.title.image ?? _source?.image,
+    animeId: _source?.animeId ?? widget.title.animeId,
+    malId: _malId,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final malId = widget.title.malId;
+    if (malId != null) {
+      try {
+        final info = await jikan.Jikan().getAnime(malId);
+        if (mounted) setState(() => _info = info);
+      } catch (e) {
+        // The page still works from the title we were given
+      }
+    }
+    await _resolveSource();
+    if (malId != null) _loadRecommendations(malId);
+  }
+
+  Future<void> _loadRecommendations(int malId) async {
+    try {
+      final recommendations = await jikan.Jikan().getAnimeRecommendations(
+        malId,
+      );
+      if (mounted) {
+        setState(() => _recommendations = recommendations.take(18).toList());
+      }
+    } catch (e) {
+      // Optional section
+    }
+  }
+
+  Future<void> _resolveSource() async {
+    setState(() {
+      _sourceError = null;
+      _episodes = null;
+    });
+    try {
+      var source = widget.title.animeId != null
+          ? widget.title
+          : _malId != null
+          ? _library.sourceFor(_malId!)
+          : null;
+      source ??= await _findSource();
+      if (source == null) {
+        throw Exception(
+          "couldn't find a stream for this show, try changing the source",
+        );
+      }
+      final episodes = await AnimeProvider().getEpisodes(source.animeId!);
+      if (!mounted) return;
+      setState(() {
+        _source = source;
+        _episodes = episodes;
+      });
+      if (widget.autoplay && episodes.isNotEmpty) _play();
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => _sourceError = e.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    }
+  }
+
+  /// Searches hianime for the show, preferring an exact title match.
+  Future<LibraryTitle?> _findSource() async {
+    final names = {
+      if (_info?.titleEnglish != null) _info!.titleEnglish!,
+      _info?.title ?? widget.title.title,
+    };
+    for (final name in names) {
+      final results = await AnimeProvider().search(name);
+      if (results.isEmpty) continue;
+      final exact = results.where(
+        (r) => names.any((n) => n.toLowerCase() == r.title.toLowerCase()),
+      );
+      final match = exact.firstOrNull ?? results.first;
+      return LibraryTitle(
+        title: match.title,
+        image: match.thumbnail,
+        animeId: match.url,
+      );
+    }
+    return null;
+  }
+
+  Future<void> _changeSource() async {
+    final picked = await showModalBottomSheet<Anime>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (context) => _SourcePicker(initialQuery: _title.title),
+    );
+    if (picked == null || !mounted) return;
+    final source = LibraryTitle(
+      title: picked.title,
+      image: picked.thumbnail,
+      animeId: picked.url,
+    );
+    if (_malId != null) _library.setSource(_malId!, source);
+    setState(() {
+      _source = source;
+      _episodes = null;
+      _sourceError = null;
+    });
+    try {
+      final episodes = await AnimeProvider().getEpisodes(source.animeId!);
+      if (mounted) setState(() => _episodes = episodes);
+    } catch (e) {
+      if (mounted) setState(() => _sourceError = e.toString());
+    }
+  }
+
+  /// The episode to resume, or the first one.
+  Episode? get _resumeEpisode {
+    final episodes = _episodes;
+    if (episodes == null || episodes.isEmpty) return null;
+    final history = _library.historyFor(_source?.animeId);
+    if (history == null) return episodes.first;
+    final last = episodes.indexWhere((e) => e.number == history.lastEpisode);
+    if (last == -1) return episodes.first;
+    // Finished the last one: move on to the next
+    if ((history.lastProgress?.isWatched ?? false) &&
+        last + 1 < episodes.length) {
+      return episodes[last + 1];
+    }
+    return episodes[last];
+  }
+
+  void _play([Episode? episode]) {
+    final target = episode ?? _resumeEpisode;
+    if (target == null || _episodes == null) return;
+    _playback.play(title: _title, episodes: _episodes!, episode: target);
+  }
+
+  void _toggleMyList() {
+    final added = _library.toggleMyList(_title);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(added ? 'added to my list' : 'removed from my list'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final wide = width >= 900;
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+      ),
+      body: ListenableBuilder(
+        listenable: Listenable.merge([_library, _playback]),
+        builder: (context, _) => CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _buildHeader(wide)),
+            SliverToBoxAdapter(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1000),
+                  child: _buildDetails(),
+                ),
+              ),
+            ),
+            if (_showEpisodes)
+              ..._buildEpisodes()
+            else
+              _buildMoreLikeThis(width),
+            SliverToBoxAdapter(
+              child: SizedBox(height: bottomInset(context) + 24),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(bool wide) {
+    final image = _title.image;
+    final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight;
+    final posterHeight = wide ? 300.0 : 240.0;
+    return SizedBox(
+      height: topPadding + posterHeight + 24,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Blurred, zoomed poster as the backdrop
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Opacity(opacity: 0.55, child: NetImage(image)),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.3),
+                  Theme.of(context).scaffoldBackgroundColor,
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.only(top: topPadding),
+            child: Center(
+              child: Container(
+                height: posterHeight,
+                width: posterHeight * 2 / 3,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 24,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: NetImage(image),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetails() {
+    final theme = Theme.of(context);
+    final info = _info;
+    final history = _library.historyFor(_source?.animeId);
+    final resume = _resumeEpisode;
+    final isPlayingThis =
+        _playback.title?.animeId != null &&
+        _playback.title?.animeId == _source?.animeId;
+
+    final meta = <Widget>[
+      if (info?.score != null)
+        Text(
+          '★ ${info!.score!.toStringAsFixed(1)}',
+          style: const TextStyle(color: green, fontWeight: FontWeight.w700),
+        ),
+      if (info?.year != null) Text('${info!.year}'),
+      if (info?.type != null) _Badge(info!.type!),
+      if (info?.episodes != null)
+        Text('${info!.episodes} eps')
+      else if (_episodes != null)
+        Text('${_episodes!.length} eps'),
+      if (info?.rating != null) _Badge(info!.rating!.split(' ').first),
+      if (info?.airing ?? false) const _Badge('airing'),
+    ];
+
+    String playLabel = 'play';
+    if (isPlayingThis) {
+      playLabel = 'now playing · E${_playback.episode?.number}';
+    } else if (history != null && resume != null) {
+      playLabel = resume.number == history.lastEpisode
+          ? 'resume E${resume.number}'
+          : 'play E${resume.number}';
+    }
+    final resumeProgress = resume == null
+        ? null
+        : history?.episodes[resume.number];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _title.title,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (info != null &&
+              info.titleEnglish != null &&
+              info.titleEnglish != info.title)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                info.title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          DefaultTextStyle.merge(
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 6,
+              children: meta,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.onSurface,
+                foregroundColor: crust,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              onPressed: _episodes == null || _episodes!.isEmpty
+                  ? null
+                  : isPlayingThis
+                  ? _playback.expand
+                  : () => _play(),
+              icon: _episodes == null && _sourceError == null
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: crust,
+                      ),
+                    )
+                  : Icon(isPlayingThis ? Icons.open_in_full : Icons.play_arrow),
+              label: Text(
+                _episodes == null && _sourceError == null
+                    ? 'finding episodes'
+                    : playLabel,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          if (resumeProgress != null && !isPlayingThis) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: WatchProgressBar(resumeProgress.fraction),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${((resumeProgress.durationMs - resumeProgress.positionMs) / 60000).ceil()}m left',
+                  style: theme.textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ],
+          if (_sourceError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _sourceError!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+            TextButton.icon(
+              onPressed: _resolveSource,
+              icon: const Icon(Icons.refresh),
+              label: const Text('retry'),
+            ),
+          ],
+          if (info?.synopsis != null) ...[
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _synopsisExpanded = !_synopsisExpanded),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                alignment: Alignment.topCenter,
+                child: Text(
+                  info!.synopsis!,
+                  maxLines: _synopsisExpanded ? null : 4,
+                  overflow: _synopsisExpanded ? null : TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                ),
+              ),
+            ),
+          ],
+          if (info != null && info.genres.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _LabeledLine('genres', info.genres.map((g) => g.name).join(', ')),
+          ],
+          if (info != null && info.studios.isNotEmpty)
+            _LabeledLine('studio', info.studios.map((s) => s.name).join(', ')),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _ActionIcon(
+                icon: _library.isInMyList(_title) ? Icons.check : Icons.add,
+                label: 'my list',
+                onTap: _toggleMyList,
+              ),
+              _ActionIcon(
+                icon: Icons.swap_horiz,
+                label: 'source',
+                onTap: _changeSource,
+              ),
+              if (history != null)
+                _ActionIcon(
+                  icon: Icons.history,
+                  label: 'clear progress',
+                  onTap: () => _library.removeFromHistory(_source!.animeId!),
+                ),
+            ],
+          ),
+          if (_source != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'source: ${_source!.title}',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          Row(
+            children: [
+              _TabLabel(
+                label: 'episodes',
+                selected: _showEpisodes,
+                onTap: () => setState(() => _showEpisodes = true),
+              ),
+              if (_malId != null)
+                _TabLabel(
+                  label: 'more like this',
+                  selected: !_showEpisodes,
+                  onTap: () => setState(() => _showEpisodes = false),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildEpisodes() {
+    final episodes = _episodes;
+    if (episodes == null) {
+      return [
+        if (_sourceError == null)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+      ];
+    }
+    if (episodes.isEmpty) {
+      return [
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: Text('no episodes available')),
+          ),
+        ),
+      ];
+    }
+    final history = _library.historyFor(_source?.animeId);
+    final playing = _playback.title?.animeId == _source?.animeId
+        ? _playback.episode?.url
+        : null;
+    return [
+      SliverList.builder(
+        itemCount: episodes.length,
+        itemBuilder: (context, index) {
+          final episode = episodes[index];
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1000),
+              child: EpisodeTile(
+                episode: episode,
+                image: _title.image,
+                progress: history?.episodes[episode.number],
+                isPlaying: episode.url == playing,
+                onTap: () => _play(episode),
+              ),
+            ),
+          );
+        },
+      ),
+    ];
+  }
+
+  Widget _buildMoreLikeThis(double width) {
+    if (_recommendations.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(child: Text('nothing to recommend yet')),
+        ),
+      );
+    }
+    final columns = (width.clamp(0, 1000) / 130).floor().clamp(3, 8);
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(
+        horizontal: width > 1000 ? (width - 1000) / 2 + 16 : 16,
+        vertical: 12,
+      ),
+      sliver: SliverGrid.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 2 / 3,
+        ),
+        itemCount: _recommendations.length,
+        itemBuilder: (context, index) {
+          final entry = _recommendations[index].entry;
+          return PosterCard(
+            title: entry.title,
+            image: entry.imageUrl,
+            width: double.infinity,
+            showTitle: false,
+            onTap: () => openTitle(
+              context,
+              LibraryTitle(
+                title: entry.title,
+                image: entry.imageUrl,
+                malId: entry.malId,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class EpisodeTile extends StatelessWidget {
+  final Episode episode;
+  final String? image;
+  final EpisodeProgress? progress;
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  const EpisodeTile({
+    super.key,
+    required this.episode,
+    required this.image,
+    required this.progress,
+    required this.isPlaying,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final progress = this.progress;
+    String status = '';
+    if (isPlaying) {
+      status = 'now playing';
+    } else if (progress != null) {
+      status = progress.isWatched
+          ? 'watched'
+          : '${((progress.durationMs - progress.positionMs) / 60000).ceil()}m left';
+    }
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 76,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        color: isPlaying
+            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+            : null,
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 112,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Opacity(
+                      opacity: progress?.isWatched ?? false ? 0.4 : 0.8,
+                      child: NetImage(
+                        image,
+                        alignment: const Alignment(0, -0.4),
+                      ),
+                    ),
+                    Center(
+                      child: Icon(
+                        isPlaying ? Icons.equalizer : Icons.play_circle_outline,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    if (progress != null)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: WatchProgressBar(progress.fraction),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'episode ${episode.number}',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: isPlaying ? theme.colorScheme.primary : null,
+                    ),
+                  ),
+                  if (status.isNotEmpty)
+                    Text(
+                      status,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (progress?.isWatched ?? false)
+              Icon(
+                Icons.check_circle,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String text;
+
+  const _Badge(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(text.toLowerCase()),
+    );
+  }
+}
+
+class _LabeledLine extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _LabeledLine(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            TextSpan(text: value.toLowerCase()),
+          ],
+        ),
+        style: theme.textTheme.bodySmall,
+      ),
+    );
+  }
+}
+
+class _ActionIcon extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionIcon({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          children: [
+            Icon(icon, color: Theme.of(context).colorScheme.onSurface),
+            const SizedBox(height: 4),
+            Text(label, style: Theme.of(context).textTheme.labelSmall),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabLabel extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TabLabel({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 10),
+        margin: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: selected ? theme.colorScheme.error : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: selected
+                ? theme.colorScheme.onSurface
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lets the user pick which hianime entry plays for this show.
+class _SourcePicker extends StatefulWidget {
+  final String initialQuery;
+
+  const _SourcePicker({required this.initialQuery});
+
+  @override
+  State<_SourcePicker> createState() => _SourcePickerState();
+}
+
+class _SourcePickerState extends State<_SourcePicker> {
+  late final _controller = TextEditingController(text: widget.initialQuery);
+  List<Anime>? _results;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _search();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    setState(() {
+      _results = null;
+      _error = null;
+    });
+    try {
+      final results = await AnimeProvider().search(_controller.text);
+      if (mounted) setState(() => _results = results);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final results = _results;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _controller,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _search(),
+              decoration: const InputDecoration(
+                hintText: 'search source...',
+                prefixIcon: Icon(Icons.search),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _error != null
+                ? Center(child: Text(_error!))
+                : results == null
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    controller: scrollController,
+                    itemCount: results.length,
+                    itemBuilder: (context, index) {
+                      final anime = results[index];
+                      return ListTile(
+                        tileColor: Colors.transparent,
+                        leading: SizedBox(
+                          width: 40,
+                          child: NetImage(anime.thumbnail),
+                        ),
+                        title: Text(anime.title),
+                        onTap: () => Navigator.pop(context, anime),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}

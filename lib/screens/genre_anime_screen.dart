@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:jikan_api/jikan_api.dart';
 import 'package:anigen/providers/jikan_provider.dart';
-import 'package:anigen/screens/anime_info_screen.dart';
+import 'package:anigen/widgets/title_cards.dart';
 
 class GenreAnimeScreen extends StatefulWidget {
   final int genreId;
   final String genreName;
-  final ValueChanged<String>? onSearchPressed;
-
   const GenreAnimeScreen({
     super.key,
     required this.genreId,
     required this.genreName,
-    this.onSearchPressed,
   });
 
   @override
@@ -54,114 +51,72 @@ class _GenreAnimeScreenState extends State<GenreAnimeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.genreName),
-      ),
+      appBar: AppBar(title: Text(widget.genreName)),
       body: Container(
         color: Theme.of(context).scaffoldBackgroundColor,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'failed to load anime',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: _loadAnime,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('retry'),
-                        ),
-                      ],
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.error,
                     ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _loadAnime,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final screenWidth = constraints.maxWidth;
-                        final isDesktop = screenWidth > 600;
-                        final crossAxisCount = isDesktop ? 5 : 3;
-                        final childAspectRatio = isDesktop ? 0.65 : 0.58;
-                        
-                        return GridView.builder(
-                          padding: const EdgeInsets.all(16),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            childAspectRatio: childAspectRatio,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 16,
-                          ),
-                          itemCount: _animeList.length,
-                          itemBuilder: (context, index) {
-                            final anime = _animeList[index];
-                        return GestureDetector(
-                          onTap: () {
-                            if (anime.malId != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => AnimeInfoScreen(
-                                    malId: anime.malId!,
-                                    animeTitle: anime.title ?? 'Unknown',
-                                    onSearchPressed: widget.onSearchPressed,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: AspectRatio(
-                                  aspectRatio: 0.7,
-                                  child: anime.imageUrl != null
-                                      ? Image.network(
-                                          anime.imageUrl!,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) => Container(
-                                            color: Theme.of(context).colorScheme.surfaceContainer,
-                                            child: const Icon(Icons.broken_image),
-                                          ),
-                                        )
-                                      : Container(
-                                          color: Theme.of(context).colorScheme.surfaceContainer,
-                                          child: const Icon(Icons.movie),
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                anime.title ?? 'Unknown',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: isDesktop ? 12 : 11,
-                                      height: 1.2,
-                                    ),
-                              ),
-                            ],
-                          ),
-                            );
-                          },
+                    const SizedBox(height: 16),
+                    Text(
+                      'failed to load anime',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: _loadAnime,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('retry'),
+                    ),
+                  ],
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadAnime,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final screenWidth = constraints.maxWidth;
+                    final isDesktop = screenWidth > 600;
+                    final crossAxisCount = isDesktop ? 5 : 3;
+                    final childAspectRatio = isDesktop ? 0.56 : 0.5;
+
+                    return GridView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        16,
+                        16,
+                        bottomInset(context) + 16,
+                      ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: childAspectRatio,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 16,
+                      ),
+                      itemCount: _animeList.length,
+                      itemBuilder: (context, index) {
+                        final anime = _animeList[index];
+                        return PosterCard(
+                          title: anime.titleEnglish ?? anime.title,
+                          image: anime.imageUrl,
+                          width: double.infinity,
+                          onTap: () =>
+                              openTitle(context, titleFromJikan(anime)),
                         );
                       },
-                    ),
-                  ),
+                    );
+                  },
+                ),
+              ),
       ),
     );
   }
