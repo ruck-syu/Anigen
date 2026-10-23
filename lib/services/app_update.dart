@@ -5,16 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
-/// A build published by the Android workflow as a GitHub release.
+/// A version published by the Android workflow as a GitHub release.
 class AppRelease {
-  final int build;
+  /// Like 1.6.2, from the v1.6.2 tag.
+  final String version;
   final String name;
   final String notes;
   final String apkUrl;
   final int apkSize;
 
   const AppRelease({
-    required this.build,
+    required this.version,
     required this.name,
     required this.notes,
     required this.apkUrl,
@@ -29,9 +30,29 @@ class AppUpdate {
       'https://api.github.com/repos/ruck-syu/Anigen/releases/latest';
   static const _channel = MethodChannel('anigen/update');
 
-  /// The CI run that built this app, from `--dart-define=BUILD_NUMBER`.
-  /// 0 for local builds.
-  static const currentBuild = int.fromEnvironment('BUILD_NUMBER');
+  /// This app's version, from `--dart-define=APP_VERSION`. Empty for local
+  /// builds.
+  static const currentVersion = String.fromEnvironment('APP_VERSION');
+
+  /// Whether [release] is newer than this app. Local builds take any release.
+  static bool isNewer(AppRelease release) {
+    final current = _parse(currentVersion);
+    if (current == null) return true;
+    final latest = _parse(release.version)!;
+    for (var i = 0; i < 3; i++) {
+      if (latest[i] != current[i]) return latest[i] > current[i];
+    }
+    return false;
+  }
+
+  static final _versionPattern = RegExp(r'^v?(\d+)\.(\d+)(?:\.(\d+))?$');
+
+  /// [major, minor, patch], or null if [version] isn't one.
+  static List<int>? _parse(String version) {
+    final match = _versionPattern.firstMatch(version);
+    if (match == null) return null;
+    return [for (var i = 1; i <= 3; i++) int.parse(match.group(i) ?? '0')];
+  }
 
   static bool get isSupported => Platform.isAndroid;
 
@@ -66,11 +87,10 @@ class AppUpdate {
       throw Exception('github answered ${response.statusCode}');
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
-    // Tags look like build-42; older hand-made releases don't count
-    final match = RegExp(
-      r'^build-(\d+)$',
-    ).firstMatch(json['tag_name'] as String? ?? '');
-    if (match == null) return null;
+    // Tags look like v1.6.2; anything else isn't a release we can compare
+    final tag = json['tag_name'] as String? ?? '';
+    final version = _parse(tag);
+    if (version == null) return null;
 
     final abi = await _channel.invokeMethod<String>('abi') ?? 'arm64-v8a';
     final assets = [
@@ -85,8 +105,8 @@ class AppUpdate {
     if (apk == null) return null;
 
     return AppRelease(
-      build: int.parse(match.group(1)!),
-      name: json['name'] as String? ?? match.group(0)!,
+      version: version.join('.'),
+      name: json['name'] as String? ?? tag,
       notes: (json['body'] as String? ?? '').trim(),
       apkUrl: apk['browser_download_url'] as String,
       apkSize: apk['size'] as int? ?? 0,
