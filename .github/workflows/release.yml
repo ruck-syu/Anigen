@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.pick.outputs.version }}
+      code: ${{ steps.pick.outputs.code }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,14 +42,21 @@ jobs:
           last=$(git ls-remote --tags origin "refs/tags/v$series.*" \
             | sed -nE "s|.*refs/tags/v$series\.([0-9]+)$|\1|p" | sort -n | tail -1)
           version="$series.$(( ${last:--1} + 1 ))"
+          # Android only installs an update with a higher versionCode, so it
+          # comes from the version itself: 1.6.2 -> 1060002. (Not the run
+          # number, which restarts whenever the workflow is renamed.)
+          IFS=. read -r major minor patch <<< "$version"
+          code=$(( major * 1000000 + minor * 10000 + patch ))
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building v$version"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Building v$version (versionCode $code)"
 
   android:
     needs: version
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      CODE: ${{ needs.version.outputs.code }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,23 +106,20 @@ jobs:
 
       - name: Build APK
         # 64-bit ARM only. APP_VERSION lets the app compare itself with the
-        # latest release; the run number keeps Android's versionCode rising.
-        # --split-per-abi stays: it puts versionCode at 2000 + run number,
-        # where installed copies already are
+        # latest release
         run: >-
-          flutter build apk --release --split-per-abi
+          flutter build apk --release
           --target-platform=android-arm64
           --build-name=$VERSION
-          --build-number=${{ github.run_number }}
+          --build-number=$CODE
           --dart-define=APP_VERSION=$VERSION
 
+      # The app's updater picks the asset ending in -<abi>.apk
       - name: Rename APK
         run: |
           mkdir -p dist
-          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
-            abi=$(basename "$apk" | sed -E 's/app-(.*)-release.apk/\1/')
-            cp "$apk" "dist/Anigen-v$VERSION-$abi.apk"
-          done
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "dist/Anigen-v$VERSION-arm64-v8a.apk"
           ls -la dist
 
       - name: Upload APK
@@ -142,11 +147,11 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
+      # No build number: Windows file versions cap each part at 65535
       - name: Build app
         run: >-
           flutter build windows --release
           --build-name=${{ env.VERSION }}
-          --build-number=${{ github.run_number }}
           --dart-define=APP_VERSION=${{ env.VERSION }}
 
       # Flutter apps need the VC++ runtime; ship it beside the exe so the app
@@ -186,6 +191,7 @@ jobs:
     runs-on: macos-15
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      CODE: ${{ needs.version.outputs.code }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -205,7 +211,7 @@ jobs:
         run: >-
           flutter build macos --release
           --build-name=$VERSION
-          --build-number=${{ github.run_number }}
+          --build-number=${{ env.CODE }}
           --dart-define=APP_VERSION=$VERSION
 
       - name: Build disk image

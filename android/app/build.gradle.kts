@@ -70,6 +70,16 @@ android {
     }
 }
 
+// Releases are 64-bit ARM only. Plugins ship prebuilt libraries for every
+// ABI, so leave the others out (Flutter overrides ndk.abiFilters)
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(
+            listOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
+        )
+    }
+}
+
 flutter {
     source = "../.."
 }
