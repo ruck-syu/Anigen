@@ -3,11 +3,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:anigen/screens/home_screen.dart';
 import 'package:anigen/providers/scraper_config_store.dart';
 import 'package:anigen/services/anilist_account.dart';
 import 'package:anigen/services/library_store.dart';
+import 'package:anigen/widgets/app_intro.dart';
 
 // Custom HTTP client to handle certificate issues on Windows
 class MyHttpOverrides extends HttpOverrides {
@@ -49,6 +49,9 @@ void main() async {
 class AnigenApp extends StatelessWidget {
   const AnigenApp({super.key});
 
+  /// Bundled in assets/fonts, see pubspec.yaml.
+  static const _font = 'JetBrainsMono';
+
   @override
   Widget build(BuildContext context) {
     // Black and red
@@ -65,8 +68,10 @@ class AnigenApp extends StatelessWidget {
       title: 'Anigen',
       debugShowCheckedModeBanner: false,
       scrollBehavior: const _AppScrollBehavior(),
+      builder: (context, child) => AppIntro(child: child!),
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: _font,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.dark(
           primary: red,
@@ -84,7 +89,8 @@ class AnigenApp extends StatelessWidget {
           backgroundColor: mantle,
           foregroundColor: text,
           elevation: 0,
-          titleTextStyle: GoogleFonts.jetBrainsMono(
+          titleTextStyle: const TextStyle(
+            fontFamily: _font,
             fontSize: 20,
             fontWeight: FontWeight.w600,
             color: text,
@@ -108,7 +114,7 @@ class AnigenApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: red, width: 2),
           ),
-          hintStyle: GoogleFonts.jetBrainsMono(color: subtext0),
+          hintStyle: const TextStyle(fontFamily: _font, color: subtext0),
         ),
         switchTheme: SwitchThemeData(
           thumbColor: WidgetStateProperty.resolveWith(
@@ -126,14 +132,19 @@ class AnigenApp extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         iconTheme: const IconThemeData(color: text),
-        textTheme: GoogleFonts.jetBrainsMonoTextTheme(
-          ThemeData.dark().textTheme.apply(bodyColor: text, displayColor: text),
+        textTheme: ThemeData.dark().textTheme.apply(
+          fontFamily: _font,
+          bodyColor: text,
+          displayColor: text,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: red,
             foregroundColor: Colors.white,
-            textStyle: GoogleFonts.jetBrainsMono(fontWeight: FontWeight.w600),
+            textStyle: const TextStyle(
+              fontFamily: _font,
+              fontWeight: FontWeight.w600,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),

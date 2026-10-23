@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/screens/title_screen.dart';
 import 'package:anigen/services/anilist_account.dart';
@@ -84,7 +83,8 @@ class AnigenLogo extends StatelessWidget {
     // Bebas Neue is condensed, so it's drawn larger to match the old width.
     return Text(
       'ANIGEN',
-      style: GoogleFonts.bebasNeue(
+      style: TextStyle(
+        fontFamily: 'BebasNeue',
         color: Theme.of(context).colorScheme.primary,
         fontSize: size * 1.4,
         letterSpacing: size * 0.06,
