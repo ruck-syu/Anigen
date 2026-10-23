@@ -108,7 +108,8 @@ class HianimeScraper {
   }
 
   /// Returns `url` (HLS master playlist), `referer`, `userAgent` and, when
-  /// available, `subtitle` (WebVTT) and `malId` (from the embed URL, used for
+  /// available, `subtitle` (the default WebVTT), `subtitles` (every track, as
+  /// JSON `[{src, label, default}]`) and `malId` (from the embed URL, used for
   /// intro/outro skip times). Null if no supported server is found.
   Future<Map<String, String>?> getStreamLink(
     String animeId,
@@ -173,12 +174,23 @@ class HianimeScraper {
 
     final subtitles = player['subtitles'];
     if (subtitles is List) {
-      final subtitle = subtitles.firstWhere(
-        (s) => s is Map && s['default'] == true,
-        orElse: () => subtitles.isNotEmpty ? subtitles.first : null,
-      );
-      if (subtitle is Map && subtitle['src'] is String) {
+      final tracks = [
+        for (final s in subtitles)
+          if (s is Map && s['src'] is String)
+            {
+              'src': s['src'],
+              'label': (s['label'] ?? s['lang'] ?? s['language'] ?? '')
+                  .toString(),
+              'default': s['default'] == true,
+            },
+      ];
+      if (tracks.isNotEmpty) {
+        final subtitle = tracks.firstWhere(
+          (t) => t['default'] == true,
+          orElse: () => tracks.first,
+        );
         result["subtitle"] = subtitle['src'] as String;
+        result["subtitles"] = jsonEncode(tracks);
       }
     }
     return result;

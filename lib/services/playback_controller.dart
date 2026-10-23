@@ -19,6 +19,14 @@ class SkipInterval {
   bool contains(Duration position) => position >= start && position < end;
 }
 
+/// A soft subtitle file the stream offers.
+class SubtitleOption {
+  final String url;
+  final String label;
+
+  const SubtitleOption(this.url, this.label);
+}
+
 /// Owns the one player in the app, so playback keeps going while the user
 /// browses. The player UI (expanded or mini) just renders this state.
 class PlaybackController extends ChangeNotifier {
@@ -39,6 +47,17 @@ class PlaybackController extends ChangeNotifier {
   List<SkipInterval> skips = const [];
   bool isExpanded = false;
   double rate = 1.0;
+
+  /// The current episode's subtitle files, and the one showing (null when
+  /// subtitles are off).
+  List<SubtitleOption> subtitles = const [];
+  SubtitleOption? subtitle;
+
+  // What the user last picked, carried to the next episode: a label, or
+  // null for off. Unset means the stream's default.
+  bool _pickedSubtitle = false;
+  String? _subtitleLabel;
+  Map<String, String> _stream = const {};
 
   // Bumped on every load so late responses for an old episode are dropped
   int _request = 0;
@@ -172,6 +191,8 @@ class PlaybackController extends ChangeNotifier {
     isLoading = true;
     error = null;
     skips = const [];
+    subtitles = const [];
+    subtitle = null;
     notifyListeners();
 
     try {
@@ -210,9 +231,20 @@ class PlaybackController extends ChangeNotifier {
         play: false,
       );
       if (request != _request) return;
-      // hianime streams ship soft subs as a separate WebVTT file
-      final subtitle = stream['subtitle'];
-      if (subtitle != null) _loadSubtitle(subtitle, stream, request);
+      // hianime streams ship soft subs as separate WebVTT files
+      _stream = stream;
+      subtitles = _subtitleOptions(stream);
+      final fallback =
+          subtitles.where((s) => s.url == stream['subtitle']).firstOrNull ??
+          subtitles.firstOrNull;
+      subtitle = !_pickedSubtitle
+          ? fallback
+          : _subtitleLabel == null
+          ? null
+          // A picked language this episode lacks falls back to the default
+          : subtitles.where((s) => s.label == _subtitleLabel).firstOrNull ??
+                fallback;
+      if (subtitle != null) _loadSubtitle(subtitle!, stream, request);
       await player.setRate(rate);
       await player.play();
 
@@ -235,10 +267,12 @@ class PlaybackController extends ChangeNotifier {
   /// only sends the stream's headers once the file is loading, so fetch the
   /// WebVTT ourselves and add it after the video has loaded.
   Future<void> _loadSubtitle(
-    String url,
+    SubtitleOption option,
     Map<String, String> stream,
     int request,
   ) async {
+    final url = option.url;
+    final label = option.label;
     SubtitleTrack track;
     try {
       final response = await http
@@ -256,19 +290,18 @@ class PlaybackController extends ChangeNotifier {
       }
       track = SubtitleTrack.data(
         utf8.decode(response.bodyBytes, allowMalformed: true),
-        title: 'English',
-        language: 'en',
+        title: label,
       );
     } catch (e) {
       debugPrint('subtitle download failed, letting mpv try: $e');
-      track = SubtitleTrack.uri(url, title: 'English', language: 'en');
+      track = SubtitleTrack.uri(url, title: label);
     }
-    if (request != _request) return;
+    if (request != _request || subtitle != option) return;
     // sub-add fails until mpv has the file open. Some streams never report
     // a duration, so take any sign of a loaded file, and try regardless if
     // none comes.
     await _fileLoaded(const Duration(seconds: 20));
-    if (request != _request) return;
+    if (request != _request || subtitle != option) return;
     try {
       await player.setSubtitleTrack(track);
     } catch (e) {
@@ -349,6 +382,41 @@ class PlaybackController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       // Skip buttons are a nice-to-have
+    }
+  }
+
+  static List<SubtitleOption> _subtitleOptions(Map<String, String> stream) {
+    final options = <SubtitleOption>[];
+    try {
+      for (final t in jsonDecode(stream['subtitles'] ?? '[]') as List) {
+        final label = (t['label'] as String?)?.trim() ?? '';
+        options.add(
+          SubtitleOption(
+            t['src'] as String,
+            label.isEmpty ? 'track ${options.length + 1}' : label,
+          ),
+        );
+      }
+    } catch (_) {}
+    final single = stream['subtitle'];
+    if (options.isEmpty && single != null) {
+      options.add(SubtitleOption(single, 'English'));
+    }
+    return options;
+  }
+
+  /// Shows [option], or turns subtitles off when null. Later episodes keep
+  /// the choice.
+  Future<void> setSubtitle(SubtitleOption? option) async {
+    _pickedSubtitle = true;
+    _subtitleLabel = option?.label;
+    if (option == subtitle) return;
+    subtitle = option;
+    notifyListeners();
+    if (option == null) {
+      await player.setSubtitleTrack(SubtitleTrack.no());
+    } else {
+      await _loadSubtitle(option, _stream, _request);
     }
   }
 
