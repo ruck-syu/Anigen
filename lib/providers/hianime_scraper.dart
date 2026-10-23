@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
@@ -57,12 +59,22 @@ class HianimeScraper {
       if (slug.isEmpty) continue;
 
       final poster = item.querySelector(config.searchPosterSelector);
+      final counts = [
+        for (final tick in item.querySelectorAll(config.searchEpisodesSelector))
+          ?int.tryParse(tick.text.trim()),
+      ];
+      final type = item.querySelector(config.searchTypeSelector)?.text.trim();
+      final japanese = link.attributes[config.searchJapaneseTitleAttribute]
+          ?.trim();
       results.add(
         Anime(
           title: link.attributes['title'] ?? link.text.trim(),
           url: slug, // e.g. "frieren-beyond-journeys-end-481"
           thumbnail:
               poster?.attributes['data-src'] ?? poster?.attributes['src'],
+          japaneseTitle: japanese == null || japanese.isEmpty ? null : japanese,
+          episodes: counts.isEmpty ? null : counts.reduce(math.max),
+          type: type == null || type.isEmpty ? null : type,
         ),
       );
     }

@@ -7,6 +7,7 @@ import 'package:anigen/services/library_store.dart';
 import 'package:anigen/services/playback_controller.dart';
 import 'package:anigen/widgets/player_overlay.dart';
 import 'package:anigen/widgets/title_cards.dart';
+import 'package:anigen/widgets/update_dialog.dart';
 
 /// App shell. Each tab keeps its own navigation stack (so the bottom bar
 /// stays put, like YouTube) and the player floats above everything, so it
@@ -36,6 +37,10 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _playback.addListener(_onPlaybackChanged);
+    // After the intro, once the home feed has had a moment to load
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted) UpdateNotice.check(context);
+    });
   }
 
   @override
@@ -214,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen>
                 backgroundColor: crust,
                 leading: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: AnigenLogo(size: 18),
+                  child: AnigenLogo(size: 22, markOnly: true),
                 ),
                 destinations: const [
                   NavigationRailDestination(

@@ -25,7 +25,7 @@
 - **Skip intro**: opening and ending timestamps from [AniSkip](https://api.aniskip.com).
 - **Remote scraper config**: the source site's settings load from this repo, so a site change can be fixed without a new release.
 - **Large screens**: layouts for tablets and desktop windows.
-- **Updates**: the Android app checks GitHub Releases and installs new versions from settings.
+- **Updates**: the app tells you when a new release is out. Android installs it from inside the app; on Windows and macOS the notice opens the release page.
 - **No ads, no accounts required, no tracking.**
 
 ---
@@ -37,7 +37,7 @@ Download the latest build from [Releases](https://github.com/ruck-syu/Anigen/rel
 | Platform | File | Notes |
 | --- | --- | --- |
 | Android | `Anigen-vX.Y.Z-arm64-v8a.apk` | For 64-bit ARM phones and tablets. Allow installs from unknown sources. Later updates can be installed from settings. |
-| Windows | `Anigen-vX.Y.Z-windows-x64-setup.exe` or `-portable.zip` | SmartScreen may warn that the app isn't recognised. Choose **More info → Run anyway**. |
+| Windows | `Anigen-vX.Y.Z-windows-x64-setup.exe` | SmartScreen may warn that the app isn't recognised. Choose **More info → Run anyway**. |
 | macOS | `Anigen-vX.Y.Z-macos.dmg` | Universal build (Apple silicon and Intel). Drag the app to Applications. The app isn't notarised, so the first launch is blocked: open **System Settings → Privacy & Security** and choose **Open Anyway**. |
 
 ---

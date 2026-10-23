@@ -3,6 +3,7 @@ import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/models/anime.dart';
 import 'package:anigen/providers/anilist_provider.dart';
 import 'package:anigen/providers/anime_provider.dart';
+import 'package:anigen/providers/source_matcher.dart';
 import 'package:anigen/services/anilist_account.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/services/playback_controller.dart';
@@ -102,18 +103,38 @@ class _TitleScreenState extends State<TitleScreen> {
       _episodes = null;
     });
     try {
-      var source = widget.title.animeId != null
-          ? widget.title
-          : _malId != null
-          ? _library.sourceFor(_malId!)
-          : null;
-      source ??= await _findSource();
+      // A source picked by hand wins over one remembered from a card
+      final picked = _malId != null ? _library.sourceFor(_malId!) : null;
+      final remembered = widget.title.animeId != null ? widget.title : null;
+      var source = picked ?? remembered ?? await _findSource();
       if (source == null) {
         throw Exception(
           "couldn't find a stream for this show, try changing the source",
         );
       }
-      final episodes = await AnimeProvider().getEpisodes(source.animeId!);
+      var episodes = await AnimeProvider().getEpisodes(source.animeId!);
+
+      // Older versions matched on title alone and could land on another
+      // season. If a remembered source's episode count is clearly off,
+      // look again.
+      final expected = _info?.episodes;
+      if (picked == null &&
+          identical(source, remembered) &&
+          expected != null &&
+          !(_info?.isAiring ?? false) &&
+          (episodes.length - expected).abs() > 1) {
+        final found = await _findSource();
+        if (found != null && found.animeId != source.animeId) {
+          final foundEpisodes = await AnimeProvider().getEpisodes(
+            found.animeId!,
+          );
+          if ((foundEpisodes.length - expected).abs() <
+              (episodes.length - expected).abs()) {
+            source = found;
+            episodes = foundEpisodes;
+          }
+        }
+      }
       if (!mounted) return;
       setState(() {
         _source = source;
@@ -129,27 +150,35 @@ class _TitleScreenState extends State<TitleScreen> {
     }
   }
 
-  /// Searches hianime for the show, preferring an exact title match.
+  /// Searches hianime for the show under each of its names, and takes the
+  /// result whose title, episode count and format best match AniList's.
   Future<LibraryTitle?> _findSource() async {
+    final info = _info;
     final names = {
-      if (_info?.title != null) _info!.title,
-      if (_info?.titleRomaji != null) _info!.titleRomaji!,
+      if (info != null) info.title,
+      if (info?.titleRomaji != null) info!.titleRomaji!,
       widget.title.title,
     };
+    final matcher = SourceMatcher(
+      names: names,
+      episodes: info?.episodes,
+      format: info?.format,
+      airing: info?.isAiring ?? false,
+    );
+    ({Anime anime, double score})? best;
     for (final name in names) {
-      final results = await AnimeProvider().search(name);
-      if (results.isEmpty) continue;
-      final exact = results.where(
-        (r) => names.any((n) => n.toLowerCase() == r.title.toLowerCase()),
-      );
-      final match = exact.firstOrNull ?? results.first;
-      return LibraryTitle(
-        title: match.title,
-        image: match.thumbnail,
-        animeId: match.url,
-      );
+      final match = matcher.best(await AnimeProvider().search(name));
+      if (match != null && (best == null || match.score > best.score)) {
+        best = match;
+      }
+      if (best != null && best.score >= SourceMatcher.confident) break;
     }
-    return null;
+    if (best == null) return null;
+    return LibraryTitle(
+      title: best.anime.title,
+      image: best.anime.thumbnail,
+      animeId: best.anime.url,
+    );
   }
 
   Future<void> _changeSource() async {
@@ -1436,6 +1465,16 @@ class _SourcePickerState extends State<_SourcePicker> {
                           child: NetImage(anime.thumbnail),
                         ),
                         title: Text(anime.title),
+                        subtitle: anime.type == null && anime.episodes == null
+                            ? null
+                            : Text(
+                                [
+                                  ?anime.type,
+                                  if (anime.episodes != null)
+                                    '${anime.episodes} '
+                                        '${anime.episodes == 1 ? 'episode' : 'episodes'}',
+                                ].join(' · '),
+                              ),
                         onTap: () => Navigator.pop(context, anime),
                       );
                     },

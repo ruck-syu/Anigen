@@ -12,6 +12,7 @@ import 'package:anigen/services/app_update.dart';
 import 'package:anigen/services/episode_alerts.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/title_cards.dart';
+import 'package:anigen/widgets/update_dialog.dart';
 
 const _repoUrl = 'https://github.com/ruck-syu/Anigen';
 
@@ -100,7 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
-      builder: (context) => _UpdateDialog(release: release!),
+      builder: (context) => UpdateDialog(release: release!),
     );
   }
 
@@ -390,7 +391,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.new_releases_outlined),
                 title: const Text('version'),
                 subtitle: Text(_versionLabel),
-                trailing: !AppUpdate.isSupported
+                trailing: !AppUpdate.hasReleases
                     ? null
                     : _isCheckingApp
                     ? spinner
@@ -642,122 +643,6 @@ class _DisclaimerDialog extends StatelessWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('close'),
-        ),
-      ],
-    );
-  }
-}
-
-/// Shows what's new, then downloads and installs the release.
-class _UpdateDialog extends StatefulWidget {
-  final AppRelease release;
-
-  const _UpdateDialog({required this.release});
-
-  @override
-  State<_UpdateDialog> createState() => _UpdateDialogState();
-}
-
-class _UpdateDialogState extends State<_UpdateDialog> {
-  double? _progress;
-  String? _error;
-  bool _needsPermission = false;
-
-  bool get _downloading => _progress != null;
-
-  Future<void> _update() async {
-    if (!await AppUpdate.canInstall()) {
-      // Android wants the "install unknown apps" switch on first
-      setState(() => _needsPermission = true);
-      await AppUpdate.openInstallSettings();
-      return;
-    }
-    setState(() {
-      _needsPermission = false;
-      _error = null;
-      _progress = 0;
-    });
-    try {
-      final apk = await AppUpdate.download(
-        widget.release,
-        onProgress: (progress) {
-          if (mounted) setState(() => _progress = progress);
-        },
-      );
-      await AppUpdate.install(apk);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _progress = null;
-          _error = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final release = widget.release;
-    final sizeMb = release.apkSize / (1024 * 1024);
-    return AlertDialog(
-      title: Text('v${release.version} is out'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                AppUpdate.currentVersion.isNotEmpty
-                    ? 'you have v${AppUpdate.currentVersion}'
-                    : 'you have a local build',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (release.notes.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(release.notes, style: theme.textTheme.bodyMedium),
-              ],
-              if (_needsPermission) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  'allow anigen to install apps, then come back and tap '
-                  'update again',
-                ),
-              ],
-              if (_downloading) ...[
-                const SizedBox(height: 16),
-                LinearProgressIndicator(value: _progress),
-                const SizedBox(height: 6),
-                Text(
-                  _progress! >= 1
-                      ? 'installing...'
-                      : 'downloading ${(_progress! * 100).round()}%',
-                  style: theme.textTheme.labelSmall,
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _downloading ? null : () => Navigator.of(context).pop(),
-          child: const Text('later'),
-        ),
-        FilledButton(
-          onPressed: _downloading ? null : _update,
-          child: Text(
-            sizeMb > 0 ? 'update · ${sizeMb.toStringAsFixed(0)} MB' : 'update',
-          ),
         ),
       ],
     );

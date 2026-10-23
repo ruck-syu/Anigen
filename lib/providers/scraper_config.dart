@@ -22,6 +22,15 @@ class ScraperConfig {
   final String searchItemSelector;
   final String searchTitleSelector;
   final String searchPosterSelector;
+
+  /// Episode counts on a search result (sub, dub, total). The largest wins.
+  final String searchEpisodesSelector;
+
+  /// The first match is the format (TV, Movie...).
+  final String searchTypeSelector;
+
+  /// Attribute on the title link holding the Japanese title.
+  final String searchJapaneseTitleAttribute;
   final String episodeItemSelector;
   final String serverItemSelector;
   final List<String> serverNames;
@@ -41,6 +50,9 @@ class ScraperConfig {
     required this.searchItemSelector,
     required this.searchTitleSelector,
     required this.searchPosterSelector,
+    this.searchEpisodesSelector = _defaultEpisodesSelector,
+    this.searchTypeSelector = _defaultTypeSelector,
+    this.searchJapaneseTitleAttribute = _defaultJapaneseTitleAttribute,
     required this.episodeItemSelector,
     required this.serverItemSelector,
     required this.serverNames,
@@ -48,6 +60,11 @@ class ScraperConfig {
     required this.embedBlobPattern,
     required this.embedXorKey,
   });
+
+  // Optional in the file, so configs from before episode matching still load
+  static const _defaultEpisodesSelector = '.tick-sub, .tick-dub, .tick-eps';
+  static const _defaultTypeSelector = '.fd-infor .fdi-item';
+  static const _defaultJapaneseTitleAttribute = 'data-jname';
 
   factory ScraperConfig.fromJson(Map<String, dynamic> json) {
     return ScraperConfig(
@@ -62,6 +79,13 @@ class ScraperConfig {
       searchItemSelector: json['searchItemSelector'] as String,
       searchTitleSelector: json['searchTitleSelector'] as String,
       searchPosterSelector: json['searchPosterSelector'] as String,
+      searchEpisodesSelector:
+          json['searchEpisodesSelector'] as String? ?? _defaultEpisodesSelector,
+      searchTypeSelector:
+          json['searchTypeSelector'] as String? ?? _defaultTypeSelector,
+      searchJapaneseTitleAttribute:
+          json['searchJapaneseTitleAttribute'] as String? ??
+          _defaultJapaneseTitleAttribute,
       episodeItemSelector: json['episodeItemSelector'] as String,
       serverItemSelector: json['serverItemSelector'] as String,
       serverNames: List<String>.from(json['serverNames'] as List),
