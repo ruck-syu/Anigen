@@ -259,15 +259,12 @@ class _PlayerVideo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playback = PlaybackController.instance;
+    final library = LibraryStore.instance;
+    final seek = Duration(seconds: library.seekSeconds);
     final topBar = [
       MaterialCustomButton(
         icon: const Icon(Icons.keyboard_arrow_down),
         onPressed: playback.minimize,
-      ),
-      const Spacer(),
-      MaterialCustomButton(
-        icon: const Icon(Icons.speed),
-        onPressed: () => showSpeedSheet(context),
       ),
     ];
     final fullscreenTopBar = [
@@ -314,6 +311,8 @@ class _PlayerVideo extends StatelessWidget {
       required bool edgeSafe,
     }) => MaterialVideoControlsThemeData(
       seekOnDoubleTap: true,
+      seekOnDoubleTapForwardDuration: seek,
+      seekOnDoubleTapBackwardDuration: seek,
       volumeGesture: false,
       brightnessGesture: false,
       speedUpOnLongPress: true,
@@ -361,9 +360,30 @@ class _PlayerVideo extends StatelessWidget {
       child: MaterialDesktopVideoControlsTheme(
         normal: desktopTheme,
         fullscreen: desktopTheme.copyWith(topButtonBar: fullscreenTopBar),
-        child: Video(
-          controller: playback.video,
-          controls: expanded ? _controls : NoVideoControls,
+        child: ListenableBuilder(
+          listenable: library,
+          builder: (context, _) => Video(
+            controller: playback.video,
+            controls: expanded ? _controls : NoVideoControls,
+            subtitleViewConfiguration: SubtitleViewConfiguration(
+              style: TextStyle(
+                height: 1.4,
+                fontSize:
+                    LibraryStore.subtitleSizes[library.subtitleSize] ?? 32,
+                color: Colors.white,
+                backgroundColor: library.subtitleBox
+                    ? const Color(0xaa000000)
+                    : null,
+                // Without the box, an outline keeps them readable
+                shadows: library.subtitleBox
+                    ? null
+                    : const [
+                        Shadow(color: Colors.black, blurRadius: 3),
+                        Shadow(color: Colors.black, blurRadius: 6),
+                      ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -687,13 +707,6 @@ class _Details extends StatelessWidget {
                       onTap: playback.nextEpisode == null
                           ? null
                           : playback.playNext,
-                    ),
-                    _Pill(
-                      icon: library.isFavourite(title)
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                      label: 'favourite',
-                      onTap: () => library.toggleFavourite(title),
                     ),
                     _Pill(
                       icon: Icons.speed,

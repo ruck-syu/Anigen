@@ -3,6 +3,7 @@ import 'package:anigen/models/anilist_media.dart';
 import 'package:anigen/screens/title_screen.dart';
 import 'package:anigen/services/anilist_account.dart';
 import 'package:anigen/services/library_store.dart';
+import 'package:anigen/widgets/wordmark.dart';
 
 const crust = Color(0xFF000000);
 const mantle = Color(0xFF0A0A0A);
@@ -76,25 +77,31 @@ class AnigenLogo extends StatelessWidget {
   /// A dark halo, so it reads over bright artwork.
   final bool shadow;
 
-  const AnigenLogo({super.key, this.size = 22, this.shadow = false});
+  /// Only the A, on its side as on the app icon.
+  final bool markOnly;
+
+  const AnigenLogo({
+    super.key,
+    this.size = 22,
+    this.shadow = false,
+    this.markOnly = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     // Bebas Neue is condensed, so it's drawn larger to match the old width.
-    return Text(
-      'ANIGEN',
-      style: TextStyle(
-        fontFamily: 'BebasNeue',
-        color: Theme.of(context).colorScheme.primary,
-        fontSize: size * 1.4,
-        letterSpacing: size * 0.06,
-        height: 1,
-        shadows: shadow
-            ? const [
-                Shadow(color: Colors.black, blurRadius: 2),
-                Shadow(color: Colors.black87, blurRadius: 10),
-              ]
-            : null,
+    // The A is the app icon's, drawn rather than typed.
+    final wordmark = Wordmark(
+      fontSize: size * 1.4,
+      letterSpacing: size * 0.06,
+      color: Theme.of(context).colorScheme.primary,
+      shadow: shadow,
+    );
+    return Semantics(
+      label: 'Anigen',
+      child: CustomPaint(
+        size: markOnly ? wordmark.markSize : wordmark.size,
+        painter: WordmarkPainter(wordmark: wordmark, markOnly: markOnly),
       ),
     );
   }

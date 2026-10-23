@@ -250,7 +250,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: padding),
                       child: const Row(
-                        children: [AnigenLogo(size: 22, shadow: true)],
+                        children: [
+                          AnigenLogo(size: 22, shadow: true, markOnly: true),
+                        ],
                       ),
                     ),
                   ),
@@ -619,34 +621,43 @@ class _Hero extends StatelessWidget {
     );
 
     if (wide) {
-      return SizedBox(
-        height: heroHeight(context),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(56, topPadding + 16, 56, 40),
-              child: Row(
-                children: [
-                  // Long lines are hard to read across a desktop window.
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 620),
-                        child: info,
+      // The whole card, backdrop included, opens the title; the buttons
+      // inside take their own taps.
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => openTitle(context, title),
+          child: SizedBox(
+            height: heroHeight(context),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(56, topPadding + 16, 56, 40),
+                  child: Row(
+                    children: [
+                      // Long lines are hard to read across a desktop window.
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 620),
+                            child: info,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 48),
+                      AspectRatio(
+                        aspectRatio: 2 / 3,
+                        child: _Poster(url: media.image),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 48),
-                  AspectRatio(
-                    aspectRatio: 2 / 3,
-                    child: _Poster(url: media.image),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }

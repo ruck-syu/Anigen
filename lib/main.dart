@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:anigen/screens/home_screen.dart';
 import 'package:anigen/providers/scraper_config_store.dart';
 import 'package:anigen/services/anilist_account.dart';
+import 'package:anigen/services/episode_alerts.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/app_intro.dart';
 
@@ -34,6 +36,21 @@ void main() async {
 
   // AniList sign-in, if any; syncs in the background
   AniListAccount.instance.load();
+
+  // New episode alerts, if turned on
+  EpisodeAlerts.start();
+
+  // The bundled fonts' licences, for the licences page in settings
+  LicenseRegistry.addLicense(() async* {
+    for (final (font, file) in [
+      ('JetBrains Mono', 'OFL-JetBrainsMono.txt'),
+      ('Bebas Neue', 'OFL-BebasNeue.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([
+        font,
+      ], await rootBundle.loadString('assets/fonts/$file'));
+    }
+  });
 
   // Set system navigation bar color
   SystemChrome.setSystemUIOverlayStyle(
