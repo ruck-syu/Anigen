@@ -285,6 +285,9 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 class _BottomBar extends StatelessWidget {
+  /// How far the fade reaches above the bar.
+  static const _fadeAbove = 32.0;
+
   final int index;
   final ValueChanged<int> onSelect;
   final double bottomPadding;
@@ -303,54 +306,70 @@ class _BottomBar extends StatelessWidget {
       (Icons.search_outlined, Icons.search, 'search'),
       (Icons.video_library_outlined, Icons.video_library, 'my list'),
     ];
-    return ClipRect(
-      child: Container(
-        padding: EdgeInsets.only(bottom: bottomPadding),
-        // Fades up into the page rather than sitting on it as a slab
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              crust,
-              crust.withValues(alpha: 0.9),
-              crust.withValues(alpha: 0),
-            ],
-            stops: const [0, 0.55, 1],
-          ),
-        ),
-        child: Row(
-          children: [
-            for (var i = 0; i < items.length; i++)
-              Expanded(
-                child: InkResponse(
-                  onTap: () => onSelect(i),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        i == index ? items[i].$2 : items[i].$1,
-                        color: i == index
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        items[i].$3,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: i == index
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                          fontWeight: i == index ? FontWeight.w700 : null,
-                        ),
-                      ),
-                    ],
-                  ),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // Fades up into the page rather than sitting on it as a slab, and
+        // starts above the bar so the content behind the icons stays dark
+        Positioned(
+          left: 0,
+          right: 0,
+          top: -_fadeAbove,
+          bottom: 0,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    crust,
+                    crust.withValues(alpha: 0.9),
+                    crust.withValues(alpha: 0),
+                  ],
+                  stops: const [0, 0.6, 1],
                 ),
               ),
-          ],
+            ),
+          ),
         ),
-      ),
+        ClipRect(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomPadding),
+            child: Row(
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  Expanded(
+                    child: InkResponse(
+                      onTap: () => onSelect(i),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            i == index ? items[i].$2 : items[i].$1,
+                            color: i == index
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            items[i].$3,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: i == index
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                              fontWeight: i == index ? FontWeight.w700 : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

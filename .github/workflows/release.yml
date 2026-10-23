@@ -1,0 +1,257 @@
+name: Release
+
+# Runs only on pushes to main, which includes merged pull requests. Builds
+# Android, Windows and macOS, then publishes them as one GitHub release.
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'linux/**'
+
+permissions:
+  # Publishing the release
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with .fvmrc
+  FLUTTER_VERSION: '3.44.2'
+
+jobs:
+  # Versions are v<major>.<minor>.<patch>: major.minor comes from
+  # pubspec.yaml, the patch is one past the newest tag in that series.
+  # Bump the minor (or major) in pubspec.yaml to start a new series.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pick version
+        id: pick
+        run: |
+          series=$(sed -nE 's/^version: *([0-9]+\.[0-9]+)\.[0-9]+.*/\1/p' pubspec.yaml)
+          last=$(git ls-remote --tags origin "refs/tags/v$series.*" \
+            | sed -nE "s|.*refs/tags/v$series\.([0-9]+)$|\1|p" | sort -n | tail -1)
+          version="$series.$(( ${last:--1} + 1 ))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building v$version"
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      # Optional: sign with a stable key so new builds install over old ones.
+      # Secrets: ANDROID_KEYSTORE_BASE64 (base64 of the .jks),
+      # ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+      # Without them the APK is signed with a throwaway debug key.
+      - name: Set up signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No signing secrets; using the debug key"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/release.jks
+          cat > android/key.properties <<PROPS
+          storeFile=release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          PROPS
+
+      - name: Build APK
+        # 64-bit ARM only. APP_VERSION lets the app compare itself with the
+        # latest release; the run number keeps Android's versionCode rising.
+        # --split-per-abi stays: it puts versionCode at 2000 + run number,
+        # where installed copies already are
+        run: >-
+          flutter build apk --release --split-per-abi
+          --target-platform=android-arm64
+          --build-name=$VERSION
+          --build-number=${{ github.run_number }}
+          --dart-define=APP_VERSION=$VERSION
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
+            abi=$(basename "$apk" | sed -E 's/app-(.*)-release.apk/\1/')
+            cp "$apk" "dist/Anigen-v$VERSION-$abi.apk"
+          done
+          ls -la dist
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*.apk
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Build app
+        run: >-
+          flutter build windows --release
+          --build-name=${{ env.VERSION }}
+          --build-number=${{ github.run_number }}
+          --dart-define=APP_VERSION=${{ env.VERSION }}
+
+      # Flutter apps need the VC++ runtime; ship it beside the exe so the app
+      # starts on PCs that don't have it
+      - name: Bundle VC++ runtime
+        shell: pwsh
+        run: |
+          $release = 'build\windows\x64\runner\Release'
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item "$env:WINDIR\System32\$dll" $release
+          }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & $iscc /DAppVersion=$env:VERSION /O"$PWD\dist" windows\installer\anigen.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Zip portable build
+        shell: pwsh
+        run: >-
+          Compress-Archive -Path build\windows\x64\runner\Release\*
+          -DestinationPath "dist\Anigen-v$env:VERSION-windows-x64-portable.zip"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  macos:
+    needs: version
+    # Pinned: Xcode 27's lipo breaks Flutter 3.44's universal-binary check
+    runs-on: macos-15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      # Universal (Apple silicon and Intel), signed ad hoc
+      - name: Build app
+        run: >-
+          flutter build macos --release
+          --build-name=$VERSION
+          --build-number=${{ github.run_number }}
+          --dart-define=APP_VERSION=$VERSION
+
+      - name: Build disk image
+        run: |
+          mkdir -p dmg dist
+          cp -R build/macos/Build/Products/Release/anigen.app dmg/Anigen.app
+          ln -s /Applications dmg/Applications
+          codesign --verify --deep --strict dmg/Anigen.app
+          hdiutil create -volname Anigen -srcfolder dmg -ov -format UDZO \
+            "dist/Anigen-v$VERSION-macos.dmg"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+
+  # Android is required: the app's update button installs from the latest
+  # release. A desktop build that fails is left out rather than holding it up.
+  release:
+    needs: [version, android, windows, macos]
+    if: ${{ !cancelled() && needs.android.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Download builds
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List builds
+        run: ls -la dist
+
+      # Tags must stay v<version>: the app reads the version from the tag
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Anigen v${{ env.VERSION }}
+          body: |
+            **Android:** the `arm64-v8a` APK, for 64-bit phones and tablets. Installed copies can update from settings.
+            **Windows:** run the `setup.exe`, or unzip the portable build. SmartScreen may warn that the app isn't recognised: choose *More info → Run anyway*.
+            **macOS:** open the `.dmg` and drag Anigen to Applications. The app isn't notarised, so the first time macOS blocks it: open *System Settings → Privacy & Security* and choose *Open Anyway*.
+          generate_release_notes: true
+          make_latest: true
+          files: dist/*

@@ -75,7 +75,11 @@ class AniListAccount extends ChangeNotifier {
   static const _expiresKey = 'anilist_token_expires';
   static const _nameKey = 'anilist_name';
 
-  final _storage = const FlutterSecureStorage();
+  // The data protection keychain needs an Apple team signature; the macOS
+  // release is signed ad hoc, so use the login keychain there
+  final _storage = const FlutterSecureStorage(
+    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+  );
   final _client = AniListClient.instance;
   final _library = LibraryStore.instance;
 
