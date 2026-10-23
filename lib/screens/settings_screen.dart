@@ -48,7 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (!mounted) return;
     setState(() => _isCheckingApp = false);
-    if (release == null || release.build <= AppUpdate.currentBuild) {
+    if (release == null || !AppUpdate.isNewer(release)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -56,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? 'couldn\'t check for updates: $error'
                 : release == null
                 ? 'no releases yet'
-                : 'you\'re on the latest build',
+                : 'you\'re on the latest version',
           ),
         ),
       );
@@ -172,8 +172,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     leading: const Icon(Icons.new_releases_outlined),
                     title: const Text('app version'),
                     subtitle: Text(
-                      AppUpdate.currentBuild > 0
-                          ? 'build ${AppUpdate.currentBuild}'
+                      AppUpdate.currentVersion.isNotEmpty
+                          ? 'v${AppUpdate.currentVersion}'
                           : 'local build',
                     ),
                     trailing: _isCheckingApp
@@ -252,7 +252,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     final release = widget.release;
     final sizeMb = release.apkSize / (1024 * 1024);
     return AlertDialog(
-      title: Text('build ${release.build} is out'),
+      title: Text('v${release.version} is out'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
         child: SingleChildScrollView(
@@ -261,8 +261,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                AppUpdate.currentBuild > 0
-                    ? 'you have build ${AppUpdate.currentBuild}'
+                AppUpdate.currentVersion.isNotEmpty
+                    ? 'you have v${AppUpdate.currentVersion}'
                     : 'you have a local build',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

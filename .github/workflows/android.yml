@@ -72,36 +72,51 @@ jobs:
           keyPassword=$KEY_PASSWORD
           PROPS
 
+      # Versions are v<major>.<minor>.<patch>: major.minor comes from
+      # pubspec.yaml, the patch is one past the newest tag in that series.
+      # Bump the minor (or major) in pubspec.yaml to start a new series.
+      - name: Pick version
+        id: version
+        run: |
+          series=$(sed -nE 's/^version: *([0-9]+\.[0-9]+)\.[0-9]+.*/\1/p' pubspec.yaml)
+          last=$(git ls-remote --tags origin "refs/tags/v$series.*" \
+            | sed -nE "s|.*refs/tags/v$series\.([0-9]+)$|\1|p" | sort -n | tail -1)
+          version="$series.$(( ${last:--1} + 1 ))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building v$version"
+
       - name: Build APKs
-        # BUILD_NUMBER lets the app compare itself with the latest release
+        # APP_VERSION lets the app compare itself with the latest release;
+        # the run number keeps Android's versionCode rising
         run: >-
           flutter build apk --release --split-per-abi
+          --build-name=${{ steps.version.outputs.version }}
           --build-number=${{ github.run_number }}
-          --dart-define=BUILD_NUMBER=${{ github.run_number }}
+          --dart-define=APP_VERSION=${{ steps.version.outputs.version }}
 
       - name: Rename APKs
         run: |
           mkdir -p dist
           for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
             abi=$(basename "$apk" | sed -E 's/app-(.*)-release.apk/\1/')
-            cp "$apk" "dist/Anigen-build-${{ github.run_number }}-$abi.apk"
+            cp "$apk" "dist/Anigen-v${{ steps.version.outputs.version }}-$abi.apk"
           done
           ls -la dist
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Anigen-Android-${{ github.run_number }}
+          name: Anigen-v${{ steps.version.outputs.version }}
           path: dist/*.apk
 
       # The app's update button installs from the latest of these. Tags must
-      # stay build-<run number>: the app reads the build from the tag.
+      # stay v<version>: the app reads the version from the tag.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
+          tag_name: v${{ steps.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Anigen build ${{ github.run_number }}
+          name: Anigen v${{ steps.version.outputs.version }}
           generate_release_notes: true
           make_latest: true
           files: dist/*.apk

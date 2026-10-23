@@ -52,6 +52,11 @@ android {
     }
 
     buildTypes {
+        // With the release key present, debug and profile builds use it too,
+        // so local builds and CI releases install over each other
+        signingConfigs.findByName("release")?.let { key ->
+            configureEach { signingConfig = key }
+        }
         release {
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
