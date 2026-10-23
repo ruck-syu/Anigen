@@ -95,12 +95,17 @@ class PlaybackController extends ChangeNotifier {
       _saveProgress();
     }
 
-    if (LibraryStore.instance.autoSkipIntro && _autoSkipped != episode!.url) {
-      final skip = skipAt(position);
-      if (skip != null && skip.type == 'op') {
-        _autoSkipped = episode!.url;
-        player.seek(skip.end);
-      }
+    final library = LibraryStore.instance;
+    final skip = skipAt(position);
+    if (skip == null) return;
+    // Once per opening or ending, so seeking back into one plays it
+    final key = '${episode!.url}|${skip.type}';
+    final wanted = skip.type == 'op'
+        ? library.autoSkipIntro
+        : library.autoSkipOutro;
+    if (wanted && _autoSkipped != key) {
+      _autoSkipped = key;
+      player.seek(skip.end);
     }
   }
 
@@ -181,10 +186,13 @@ class PlaybackController extends ChangeNotifier {
         throw Exception('no stream found for this episode');
       }
 
-      // Resume where the user left off, unless they finished it
-      final saved = LibraryStore.instance
-          .historyFor(title.animeId)
-          ?.episodes[episode.number];
+      // Resume where the user left off, unless they finished it or turned
+      // resuming off
+      final saved = LibraryStore.instance.resume
+          ? LibraryStore.instance
+                .historyFor(title.animeId)
+                ?.episodes[episode.number]
+          : null;
       final start =
           saved != null && !saved.isWatched && saved.positionMs > 10000
           ? Duration(milliseconds: saved.positionMs)

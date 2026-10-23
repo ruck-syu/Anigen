@@ -112,6 +112,25 @@ class LibraryStore extends ChangeNotifier {
   static const _sourcesKey = 'library_sources';
   static const _autoplayKey = 'settings_autoplay';
   static const _autoSkipKey = 'settings_auto_skip_intro';
+  static const _autoSkipOutroKey = 'settings_auto_skip_outro';
+  static const _resumeKey = 'settings_resume';
+  static const _seekKey = 'settings_seek_seconds';
+  static const _subtitleSizeKey = 'settings_subtitle_size';
+  static const _subtitleBoxKey = 'settings_subtitle_box';
+  static const _introKey = 'settings_intro';
+  static const _alertsKey = 'settings_episode_alerts';
+
+  /// Double-tap seek lengths offered in settings.
+  static const seekChoices = [5, 10, 15, 30];
+
+  /// Subtitle sizes offered in settings, in media_kit's units (32 is its
+  /// default).
+  static const subtitleSizes = {
+    'small': 24.0,
+    'medium': 32.0,
+    'large': 40.0,
+    'huge': 48.0,
+  };
 
   SharedPreferences? _prefs;
   final Map<String, HistoryEntry> _history = {};
@@ -120,6 +139,15 @@ class LibraryStore extends ChangeNotifier {
   final Map<int, LibraryTitle> _sources = {};
   bool autoplay = true;
   bool autoSkipIntro = false;
+  bool autoSkipOutro = false;
+
+  /// Start an episode where you left it, rather than from the beginning.
+  bool resume = true;
+  int seekSeconds = 10;
+  String subtitleSize = 'medium';
+  bool subtitleBox = true;
+  bool showIntro = true;
+  bool episodeAlerts = false;
 
   /// Hook for AniList progress sync, so the library doesn't depend on it.
   void Function(LibraryTitle title, String episode)? onEpisodeWatched;
@@ -146,6 +174,14 @@ class LibraryStore extends ChangeNotifier {
       }
       autoplay = prefs.getBool(_autoplayKey) ?? true;
       autoSkipIntro = prefs.getBool(_autoSkipKey) ?? false;
+      autoSkipOutro = prefs.getBool(_autoSkipOutroKey) ?? false;
+      resume = prefs.getBool(_resumeKey) ?? true;
+      seekSeconds = prefs.getInt(_seekKey) ?? 10;
+      final size = prefs.getString(_subtitleSizeKey);
+      if (subtitleSizes.containsKey(size)) subtitleSize = size!;
+      subtitleBox = prefs.getBool(_subtitleBoxKey) ?? true;
+      showIntro = prefs.getBool(_introKey) ?? true;
+      episodeAlerts = prefs.getBool(_alertsKey) ?? false;
     } catch (e) {
       // Start with an empty library rather than not at all
     }
@@ -178,12 +214,7 @@ class LibraryStore extends ChangeNotifier {
 
   void setSource(int malId, LibraryTitle source) {
     _sources[malId] = source;
-    _prefs?.setString(
-      _sourcesKey,
-      jsonEncode({
-        for (final e in _sources.entries) '${e.key}': e.value.toJson(),
-      }),
-    );
+    _saveSources();
     notifyListeners();
   }
 
@@ -221,6 +252,13 @@ class LibraryStore extends ChangeNotifier {
     }
   }
 
+  /// Forgets every show's progress. Favourites stay.
+  void clearHistory() {
+    _history.clear();
+    _saveHistory();
+    notifyListeners();
+  }
+
   void _saveHistory() {
     _prefs?.setString(
       _historyKey,
@@ -245,12 +283,95 @@ class LibraryStore extends ChangeNotifier {
     } else {
       _favourites.removeAt(index);
     }
+    _saveFavourites();
+    notifyListeners();
+    return index == -1;
+  }
+
+  void _saveFavourites() {
     _prefs?.setStringList(
       _favouritesKey,
       _favourites.map((t) => jsonEncode(t.toJson())).toList(),
     );
+  }
+
+  void _saveSources() {
+    _prefs?.setString(
+      _sourcesKey,
+      jsonEncode({
+        for (final e in _sources.entries) '${e.key}': e.value.toJson(),
+      }),
+    );
+  }
+
+  /// Favourites, watch history and picked sources, for a backup file.
+  Map<String, dynamic> exportData() => {
+    'app': 'anigen',
+    'version': 1,
+    'exportedAt': DateTime.now().toUtc().toIso8601String(),
+    'favourites': [for (final t in _favourites) t.toJson()],
+    'history': {for (final e in _history.entries) e.key: e.value.toJson()},
+    'sources': {
+      for (final e in _sources.entries) '${e.key}': e.value.toJson(),
+    },
+  };
+
+  /// Merges a backup from [exportData] into the library: the newer progress
+  /// wins for each show, and favourites and sources are added to. Returns
+  /// how many shows and favourites came in. Throws on a file that isn't one.
+  ({int shows, int favourites}) importData(Map<String, dynamic> data) {
+    if (data['app'] != 'anigen' || data['version'] is! int) {
+      throw const FormatException('not an anigen backup');
+    }
+    var shows = 0;
+    var favourites = 0;
+    final history = data['history'] as Map<String, dynamic>? ?? const {};
+    for (final e in history.entries) {
+      final entry = HistoryEntry.fromJson(e.value as Map<String, dynamic>);
+      final current = _history[e.key];
+      if (current == null || entry.updatedAt > current.updatedAt) {
+        _history[e.key] = entry;
+        shows++;
+      }
+    }
+    for (final raw in data['favourites'] as List? ?? const []) {
+      final title = LibraryTitle.fromJson(raw as Map<String, dynamic>);
+      if (_indexOf(title) == -1) {
+        _favourites.add(title);
+        favourites++;
+      }
+    }
+    final sources = data['sources'] as Map<String, dynamic>? ?? const {};
+    for (final e in sources.entries) {
+      final id = int.tryParse(e.key);
+      if (id == null) continue;
+      _sources.putIfAbsent(
+        id,
+        () => LibraryTitle.fromJson(e.value as Map<String, dynamic>),
+      );
+    }
+    _saveHistory();
+    _saveFavourites();
+    _saveSources();
     notifyListeners();
-    return index == -1;
+    return (shows: shows, favourites: favourites);
+  }
+
+  /// Totals for the profile when there's no AniList account to ask.
+  ({int shows, int episodes, Duration watched}) get stats {
+    var episodes = 0;
+    var watchedMs = 0;
+    for (final entry in _history.values) {
+      for (final progress in entry.episodes.values) {
+        if (progress.isWatched) episodes++;
+        watchedMs += progress.positionMs;
+      }
+    }
+    return (
+      shows: _history.length,
+      episodes: episodes,
+      watched: Duration(milliseconds: watchedMs),
+    );
   }
 
   void setAutoplay(bool value) {
@@ -262,6 +383,48 @@ class LibraryStore extends ChangeNotifier {
   void setAutoSkipIntro(bool value) {
     autoSkipIntro = value;
     _prefs?.setBool(_autoSkipKey, value);
+    notifyListeners();
+  }
+
+  void setAutoSkipOutro(bool value) {
+    autoSkipOutro = value;
+    _prefs?.setBool(_autoSkipOutroKey, value);
+    notifyListeners();
+  }
+
+  void setResume(bool value) {
+    resume = value;
+    _prefs?.setBool(_resumeKey, value);
+    notifyListeners();
+  }
+
+  void setSeekSeconds(int value) {
+    seekSeconds = value;
+    _prefs?.setInt(_seekKey, value);
+    notifyListeners();
+  }
+
+  void setSubtitleSize(String value) {
+    subtitleSize = value;
+    _prefs?.setString(_subtitleSizeKey, value);
+    notifyListeners();
+  }
+
+  void setSubtitleBox(bool value) {
+    subtitleBox = value;
+    _prefs?.setBool(_subtitleBoxKey, value);
+    notifyListeners();
+  }
+
+  void setShowIntro(bool value) {
+    showIntro = value;
+    _prefs?.setBool(_introKey, value);
+    notifyListeners();
+  }
+
+  void setEpisodeAlerts(bool value) {
+    episodeAlerts = value;
+    _prefs?.setBool(_alertsKey, value);
     notifyListeners();
   }
 }

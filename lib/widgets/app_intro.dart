@@ -1,8 +1,14 @@
-import 'package:flutter/material.dart';
-import 'package:anigen/widgets/title_cards.dart';
+import 'dart:io';
 
-/// The opening animation: the wordmark opens out from the centre with a red
-/// glow, holds, then rushes towards the viewer as the app fades in behind it.
+import 'package:flutter/material.dart';
+
+import 'package:anigen/services/library_store.dart';
+import 'package:anigen/widgets/wordmark.dart';
+
+/// The opening animation: the app icon's arched A, lying on its side as on
+/// the icon, turns 90° right to stand up, then "NIGEN" slides out from
+/// behind it to spell the wordmark. It holds, then rushes towards the viewer
+/// as the app fades in behind it.
 ///
 /// [child] is built from the start, so the home screen loads during it.
 class AppIntro extends StatefulWidget {
@@ -18,20 +24,28 @@ class _AppIntroState extends State<AppIntro>
     with SingleTickerProviderStateMixin {
   late final _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1900),
+    duration: const Duration(milliseconds: 2600),
   );
 
-  late final _reveal = CurvedAnimation(
+  late final _appear = CurvedAnimation(
     parent: _controller,
-    curve: const Interval(0, 0.4, curve: Curves.easeOutCubic),
+    curve: const Interval(0, 0.1, curve: Curves.easeOut),
+  );
+  late final _turn = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.16, 0.42, curve: Curves.easeInOutBack),
+  );
+  late final _slide = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.42, 0.68, curve: Curves.easeOutCubic),
   );
   late final _glow = CurvedAnimation(
     parent: _controller,
-    curve: const Interval(0.15, 0.6, curve: Curves.easeInOut),
+    curve: const Interval(0.5, 0.82, curve: Curves.easeInOut),
   );
   late final _exit = CurvedAnimation(
     parent: _controller,
-    curve: const Interval(0.68, 1, curve: Curves.easeInCubic),
+    curve: const Interval(0.82, 1, curve: Curves.easeInCubic),
   );
 
   bool _done = false;
@@ -42,8 +56,9 @@ class _AppIntroState extends State<AppIntro>
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    // Skipped when the system asks for less motion
-    if (MediaQuery.disableAnimationsOf(context)) {
+    // Skipped when turned off in settings or the system asks for less motion
+    if (!LibraryStore.instance.showIntro ||
+        MediaQuery.disableAnimationsOf(context)) {
       _done = true;
       return;
     }
@@ -61,9 +76,15 @@ class _AppIntroState extends State<AppIntro>
   @override
   Widget build(BuildContext context) {
     final red = Theme.of(context).colorScheme.primary;
+    // Same proportions as AnigenLogo
     final logoSize = (MediaQuery.sizeOf(context).shortestSide * 0.14).clamp(
       40.0,
       96.0,
+    );
+    final wordmark = Wordmark(
+      fontSize: logoSize * 1.4,
+      letterSpacing: logoSize * 0.06,
+      color: red,
     );
 
     return Stack(
@@ -83,7 +104,7 @@ class _AppIntroState extends State<AppIntro>
                   color: Colors.black,
                   child: Center(
                     child: Transform.scale(
-                      scale: (0.88 + 0.12 * _reveal.value) * (1 + 5 * exit),
+                      scale: 1 + 5 * exit,
                       child: Stack(
                         alignment: Alignment.center,
                         clipBehavior: Clip.none,
@@ -104,14 +125,15 @@ class _AppIntroState extends State<AppIntro>
                               ),
                             ),
                           ),
-                          // Opens out from the centre
-                          ClipRect(
-                            child: Align(
-                              widthFactor: _reveal.value,
-                              child: Opacity(
-                                opacity: _reveal.value,
-                                child: AnigenLogo(size: logoSize),
-                              ),
+                          CustomPaint(
+                            size: wordmark.size,
+                            painter: WordmarkPainter(
+                              wordmark: wordmark,
+                              // Android 12+ has just shown the icon on its
+                              // splash, so the A is already there
+                              opacity: Platform.isAndroid ? 1 : _appear.value,
+                              turn: _turn.value,
+                              slide: _slide.value,
                             ),
                           ),
                         ],

@@ -45,6 +45,10 @@ dependencies:
   shared_preferences: ^2.3.3
   flutter_web_auth_2: ^5.1.0
   flutter_secure_storage: ^11.2.0
+  file_picker: ^13.1.0
+  url_launcher: ^6.3.3
+  flutter_local_notifications: ^22.3.2
+  workmanager: ^0.10.10
 
 dev_dependencies:
   flutter_test:
@@ -80,6 +84,9 @@ flutter:
   assets:
     - assets/icon.png
     - scraper_config.json
+    # Shown on the licences page
+    - assets/fonts/OFL-JetBrainsMono.txt
+    - assets/fonts/OFL-BebasNeue.txt
 
   # Bundled rather than fetched at runtime, so desktop builds and offline
   # launches get the right fonts from the first frame
