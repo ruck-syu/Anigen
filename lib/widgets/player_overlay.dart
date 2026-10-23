@@ -280,6 +280,10 @@ class _PlayerVideo extends StatelessWidget {
         ),
       ),
       MaterialCustomButton(
+        icon: const Icon(Icons.subtitles_outlined),
+        onPressed: () => showSubtitleSheet(context),
+      ),
+      MaterialCustomButton(
         icon: const Icon(Icons.speed),
         onPressed: () => showSpeedSheet(context),
       ),
@@ -350,6 +354,10 @@ class _PlayerVideo extends StatelessWidget {
         const MaterialDesktopVolumeButton(),
         const MaterialDesktopPositionIndicator(),
         const Spacer(),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.subtitles_outlined),
+          onPressed: () => showSubtitleSheet(context),
+        ),
         const MaterialDesktopFullscreenButton(),
       ],
     );
@@ -709,6 +717,17 @@ class _Details extends StatelessWidget {
                           : playback.playNext,
                     ),
                     _Pill(
+                      icon: playback.subtitle == null
+                          ? Icons.subtitles_off_outlined
+                          : Icons.subtitles_outlined,
+                      label: playback.subtitle == null
+                          ? 'subtitles off'
+                          : playback.subtitles.length > 1
+                          ? playback.subtitle!.label.toLowerCase()
+                          : 'subtitles',
+                      onTap: () => showSubtitleSheet(context),
+                    ),
+                    _Pill(
                       icon: Icons.speed,
                       label: '${playback.rate}x',
                       onTap: () => showSpeedSheet(context),
@@ -878,6 +897,82 @@ void showSpeedSheet(BuildContext context) {
               },
             ),
         ],
+      ),
+    ),
+  );
+}
+
+/// Which subtitles show, and how they look. The look is the same setting as
+/// in settings, so it sticks.
+void showSubtitleSheet(BuildContext context) {
+  final playback = PlaybackController.instance;
+  final library = LibraryStore.instance;
+  showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([playback, library]),
+        builder: (context, _) {
+          final theme = Theme.of(context);
+          Widget choice(SubtitleOption? option, String label) => ListTile(
+            tileColor: Colors.transparent,
+            leading: Icon(
+              playback.subtitle == option ? Icons.check : null,
+              color: theme.colorScheme.primary,
+            ),
+            title: Text(label),
+            onTap: () => playback.setSubtitle(option),
+          );
+          return ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                tileColor: Colors.transparent,
+                title: Text('subtitles'),
+              ),
+              if (playback.subtitles.isEmpty)
+                ListTile(
+                  tileColor: Colors.transparent,
+                  leading: const Icon(Icons.subtitles_off_outlined),
+                  title: Text(
+                    playback.isLoading ? 'loading...' : 'none for this episode',
+                  ),
+                )
+              else ...[
+                choice(null, 'off'),
+                for (final option in playback.subtitles)
+                  choice(option, option.label.toLowerCase()),
+              ],
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final size in LibraryStore.subtitleSizes.keys)
+                      ChoiceChip(
+                        label: Text(size),
+                        selected: library.subtitleSize == size,
+                        onSelected: (_) => library.setSubtitleSize(size),
+                      ),
+                  ],
+                ),
+              ),
+              SwitchListTile(
+                tileColor: Colors.transparent,
+                title: const Text('background box'),
+                subtitle: library.subtitleBox
+                    ? null
+                    : const Text('outlined text instead'),
+                value: library.subtitleBox,
+                onChanged: library.setSubtitleBox,
+              ),
+            ],
+          );
+        },
       ),
     ),
   );
