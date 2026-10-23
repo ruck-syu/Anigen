@@ -173,12 +173,6 @@ jobs:
           & $iscc /DAppVersion=$env:VERSION /O"$PWD\dist" windows\installer\anigen.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Zip portable build
-        shell: pwsh
-        run: >-
-          Compress-Archive -Path build\windows\x64\runner\Release\*
-          -DestinationPath "dist\Anigen-v$env:VERSION-windows-x64-portable.zip"
-
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
@@ -256,7 +250,7 @@ jobs:
           name: Anigen v${{ env.VERSION }}
           body: |
             **Android:** the `arm64-v8a` APK, for 64-bit phones and tablets. Installed copies can update from settings.
-            **Windows:** run the `setup.exe`, or unzip the portable build. SmartScreen may warn that the app isn't recognised: choose *More info → Run anyway*.
+            **Windows:** run the `setup.exe`. SmartScreen may warn that the app isn't recognised: choose *More info → Run anyway*.
             **macOS:** open the `.dmg` and drag Anigen to Applications. The app isn't notarised, so the first time macOS blocks it: open *System Settings → Privacy & Security* and choose *Open Anyway*.
           generate_release_notes: true
           make_latest: true

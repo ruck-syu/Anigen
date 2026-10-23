@@ -11,23 +11,31 @@ class AppRelease {
   final String version;
   final String name;
   final String notes;
-  final String apkUrl;
+
+  /// The release on GitHub, for platforms that update by hand.
+  final String pageUrl;
+
+  /// The APK for this device. Android only.
+  final String? apkUrl;
   final int apkSize;
 
   const AppRelease({
     required this.version,
     required this.name,
     required this.notes,
-    required this.apkUrl,
-    required this.apkSize,
+    required this.pageUrl,
+    this.apkUrl,
+    this.apkSize = 0,
   });
 }
 
-/// In-app updates on Android: finds the latest release on GitHub, downloads
-/// the APK for this device and hands it to the system installer.
+/// Finds the latest release on GitHub. On Android it also downloads the APK
+/// for this device and hands it to the system installer; elsewhere the
+/// release page has the download.
 class AppUpdate {
   static const _latestUrl =
       'https://api.github.com/repos/ruck-syu/Anigen/releases/latest';
+  static const _releasesUrl = 'https://github.com/ruck-syu/Anigen/releases';
   static const _channel = MethodChannel('anigen/update');
 
   /// This app's version, from `--dart-define=APP_VERSION`. Empty for local
@@ -54,7 +62,16 @@ class AppUpdate {
     return [for (var i = 1; i <= 3; i++) int.parse(match.group(i) ?? '0')];
   }
 
+  /// Whether updates install from inside the app.
   static bool get isSupported => Platform.isAndroid;
+
+  /// Whether this build can tell if it's out of date: a release build, on a
+  /// platform the workflow publishes.
+  static bool get canCheck => currentVersion.isNotEmpty && hasReleases;
+
+  /// Whether the release workflow builds for this platform.
+  static bool get hasReleases =>
+      Platform.isAndroid || Platform.isMacOS || Platform.isWindows;
 
   /// Called when the system installer gives up, with its reason.
   static void Function(String message)? onInstallFailed;
@@ -74,7 +91,7 @@ class AppUpdate {
     });
   }
 
-  /// The latest release, or null if there isn't one this app can install.
+  /// The latest release, or null if there isn't one for this platform.
   static Future<AppRelease?> latest() async {
     final response = await http
         .get(
@@ -92,6 +109,21 @@ class AppUpdate {
     final version = _parse(tag);
     if (version == null) return null;
 
+    final page = json['html_url'] as String? ?? '$_releasesUrl/tag/$tag';
+    final release = (
+      version: version.join('.'),
+      name: json['name'] as String? ?? tag,
+      notes: (json['body'] as String? ?? '').trim(),
+    );
+    if (!Platform.isAndroid) {
+      return AppRelease(
+        version: release.version,
+        name: release.name,
+        notes: release.notes,
+        pageUrl: page,
+      );
+    }
+
     final abi = await _channel.invokeMethod<String>('abi') ?? 'arm64-v8a';
     final assets = [
       for (final asset in json['assets'] as List? ?? const [])
@@ -105,9 +137,10 @@ class AppUpdate {
     if (apk == null) return null;
 
     return AppRelease(
-      version: version.join('.'),
-      name: json['name'] as String? ?? tag,
-      notes: (json['body'] as String? ?? '').trim(),
+      version: release.version,
+      name: release.name,
+      notes: release.notes,
+      pageUrl: page,
       apkUrl: apk['browser_download_url'] as String,
       apkSize: apk['size'] as int? ?? 0,
     );
@@ -124,7 +157,7 @@ class AppUpdate {
     final client = http.Client();
     try {
       final response = await client.send(
-        http.Request('GET', Uri.parse(release.apkUrl)),
+        http.Request('GET', Uri.parse(release.apkUrl!)),
       );
       if (response.statusCode != 200) {
         throw Exception('download failed (${response.statusCode})');
