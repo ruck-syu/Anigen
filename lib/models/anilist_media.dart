@@ -78,7 +78,7 @@ class AniListMedia {
       titleRomaji: romaji,
       image: cover['extraLarge'] as String?,
       banner: json['bannerImage'] as String?,
-      description: json['description'] as String?,
+      description: _cleanDescription(json['description'] as String?),
       score: json['averageScore'] as int?,
       popularity: json['popularity'] as int?,
       episodes: json['episodes'] as int?,
@@ -94,4 +94,25 @@ class AniListMedia {
       ],
     );
   }
+}
+
+/// AniList descriptions carry HTML even as plain text: line breaks as
+/// `<br>`, emphasis tags and escaped entities.
+String? _cleanDescription(String? html) {
+  if (html == null) return null;
+  final text = html
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#039;', "'")
+      .replaceAll('&apos;', "'")
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&mdash;', '—')
+      .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+  return text.isEmpty ? null : text;
 }

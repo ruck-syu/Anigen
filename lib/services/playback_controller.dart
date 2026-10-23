@@ -204,11 +204,7 @@ class PlaybackController extends ChangeNotifier {
       if (request != _request) return;
       // hianime streams ship soft subs as a separate WebVTT file
       final subtitle = stream['subtitle'];
-      if (subtitle != null) {
-        await player.setSubtitleTrack(
-          SubtitleTrack.uri(subtitle, title: 'English', language: 'en'),
-        );
-      }
+      if (subtitle != null) _loadSubtitle(subtitle, stream, request);
       await player.setRate(rate);
       await player.play();
 
@@ -225,6 +221,93 @@ class PlaybackController extends ChangeNotifier {
       error = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     }
+  }
+
+  /// The subtitle host refuses requests without the embed's Referer, and mpv
+  /// only sends the stream's headers once the file is loading, so fetch the
+  /// WebVTT ourselves and add it after the video has loaded.
+  Future<void> _loadSubtitle(
+    String url,
+    Map<String, String> stream,
+    int request,
+  ) async {
+    SubtitleTrack track;
+    try {
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: {
+              if (stream['userAgent'] != null)
+                'User-Agent': stream['userAgent']!,
+              if (stream['referer'] != null) 'Referer': stream['referer']!,
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        throw Exception('subtitles answered ${response.statusCode}');
+      }
+      track = SubtitleTrack.data(
+        utf8.decode(response.bodyBytes, allowMalformed: true),
+        title: 'English',
+        language: 'en',
+      );
+    } catch (e) {
+      debugPrint('subtitle download failed, letting mpv try: $e');
+      track = SubtitleTrack.uri(url, title: 'English', language: 'en');
+    }
+    if (request != _request) return;
+    // sub-add fails until mpv has the file open. Some streams never report
+    // a duration, so take any sign of a loaded file, and try regardless if
+    // none comes.
+    await _fileLoaded(const Duration(seconds: 20));
+    if (request != _request) return;
+    try {
+      await player.setSubtitleTrack(track);
+    } catch (e) {
+      debugPrint('could not add subtitles: $e');
+    }
+  }
+
+  Future<void> _fileLoaded(Duration timeout) {
+    final state = player.state;
+    bool loaded(Tracks tracks) =>
+        tracks.video.any((t) => t.id != 'auto' && t.id != 'no');
+    if (state.duration > Duration.zero ||
+        state.width != null ||
+        loaded(state.tracks)) {
+      return Future.value();
+    }
+    final done = Completer<void>();
+    final subscriptions = <StreamSubscription>[];
+    late final Timer timer;
+    void finish() {
+      if (done.isCompleted) return;
+      done.complete();
+      timer.cancel();
+      for (final subscription in subscriptions) {
+        subscription.cancel();
+      }
+    }
+
+    timer = Timer(timeout, finish);
+
+    subscriptions
+      ..add(
+        player.stream.duration.listen((d) {
+          if (d > Duration.zero) finish();
+        }),
+      )
+      ..add(
+        player.stream.width.listen((w) {
+          if (w != null) finish();
+        }),
+      )
+      ..add(
+        player.stream.tracks.listen((t) {
+          if (loaded(t)) finish();
+        }),
+      );
+    return done.future;
   }
 
   Future<void> _loadSkipTimes(int? malId, String episode, int request) async {

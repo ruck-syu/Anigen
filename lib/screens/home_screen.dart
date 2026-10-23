@@ -123,19 +123,26 @@ class _HomeScreenState extends State<HomeScreen>
         if (!didPop) _handleBack();
       },
       child: LayoutBuilder(
-        builder: (context, constraints) => constraints.maxWidth >= 900
-            ? _buildWide(context, tabs)
+        builder: (context, constraints) => constraints.maxWidth >= mediumWidth
+            ? _buildWide(context, tabs, constraints.maxWidth >= wideWidth)
             : _buildNarrow(context, tabs),
       ),
     );
   }
 
   /// Gives the tab pages enough bottom padding to scroll clear of the
-  /// floating bar and mini player.
-  Widget _withBottomInset(BuildContext context, Widget child, double inset) {
+  /// floating bar and mini player, and [size] when they don't get the whole
+  /// window, so their breakpoints go by the space they really have.
+  Widget _withBottomInset(
+    BuildContext context,
+    Widget child,
+    double inset, {
+    Size? size,
+  }) {
     final media = MediaQuery.of(context);
     return MediaQuery(
       data: media.copyWith(
+        size: size,
         padding: media.padding.copyWith(bottom: inset),
         viewPadding: media.viewPadding.copyWith(bottom: inset),
       ),
@@ -190,7 +197,9 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildWide(BuildContext context, Widget tabs) {
+  /// The rail layout, for tablets and desktops. [wide] gives the player its
+  /// floating mini player and episode side panel.
+  Widget _buildWide(BuildContext context, Widget tabs, bool wide) {
     final active = _playback.isActive;
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -202,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen>
                 selectedIndex: _index,
                 onDestinationSelected: _selectTab,
                 labelType: NavigationRailLabelType.all,
-                backgroundColor: mantle,
+                backgroundColor: crust,
                 leading: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: AnigenLogo(size: 18),
@@ -226,10 +235,36 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
               Expanded(
-                child: _withBottomInset(
-                  context,
-                  tabs,
-                  active ? miniPlayerHeight + 24 : 0,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => _withBottomInset(
+                          context,
+                          tabs,
+                          active ? miniPlayerHeight + 24 : 0,
+                          size: constraints.biggest,
+                        ),
+                      ),
+                    ),
+                    // Fades the rail into the page instead of a hard edge
+                    // where artwork meets it
+                    const Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 24,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [crust, Color(0x00000000)],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -239,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: PlayerOverlay(
                 sheet: _sheet,
                 miniBottom: 8,
-                wide: true,
+                wide: wide,
                 onOpenTitle: _openTitle,
               ),
             ),
@@ -271,10 +306,17 @@ class _BottomBar extends StatelessWidget {
     return ClipRect(
       child: Container(
         padding: EdgeInsets.only(bottom: bottomPadding),
+        // Fades up into the page rather than sitting on it as a slab
         decoration: BoxDecoration(
-          color: mantle.withValues(alpha: 0.96),
-          border: Border(
-            top: BorderSide(color: theme.colorScheme.surfaceContainerHighest),
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              crust,
+              crust.withValues(alpha: 0.9),
+              crust.withValues(alpha: 0),
+            ],
+            stops: const [0, 0.55, 1],
           ),
         ),
         child: Row(

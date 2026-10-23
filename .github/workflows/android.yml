@@ -13,7 +13,8 @@ on:
       - '.github/workflows/windows.yml'
 
 permissions:
-  contents: read
+  # Publishing the release
+  contents: write
 
 concurrency:
   group: android-${{ github.ref }}
@@ -72,15 +73,18 @@ jobs:
           PROPS
 
       - name: Build APKs
-        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }}
+        # BUILD_NUMBER lets the app compare itself with the latest release
+        run: >-
+          flutter build apk --release --split-per-abi
+          --build-number=${{ github.run_number }}
+          --dart-define=BUILD_NUMBER=${{ github.run_number }}
 
       - name: Rename APKs
         run: |
           mkdir -p dist
-          name="${GITHUB_REF_NAME//\//-}"
           for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
             abi=$(basename "$apk" | sed -E 's/app-(.*)-release.apk/\1/')
-            cp "$apk" "dist/Anigen-$name-$abi.apk"
+            cp "$apk" "dist/Anigen-build-${{ github.run_number }}-$abi.apk"
           done
           ls -la dist
 
@@ -89,3 +93,15 @@ jobs:
         with:
           name: Anigen-Android-${{ github.run_number }}
           path: dist/*.apk
+
+      # The app's update button installs from the latest of these. Tags must
+      # stay build-<run number>: the app reads the build from the tag.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Anigen build ${{ github.run_number }}
+          generate_release_notes: true
+          make_latest: true
+          files: dist/*.apk

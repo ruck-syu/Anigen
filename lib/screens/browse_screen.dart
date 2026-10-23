@@ -89,7 +89,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= 900;
+    final wide = width >= wideWidth;
+    // The rail carries the logo once there is one.
+    final hasRail =
+        MediaQueryData.fromView(View.of(context)).size.width >= mediumWidth;
     final padding = wide ? 24.0 : 16.0;
     final posterWidth = width >= 1200
         ? 160.0
@@ -220,39 +223,40 @@ class _BrowseScreenState extends State<BrowseScreen> {
               ),
             ),
           // Top bar fades in as the page scrolls past the hero
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            child: ValueListenableBuilder<double>(
-              valueListenable: _barOpacity,
-              builder: (context, opacity, child) => Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7 + 0.25 * opacity),
-                      mantle.withValues(alpha: opacity * 0.95),
-                    ],
+          if (!hasRail)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _barOpacity,
+                builder: (context, opacity, child) => Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.7 + 0.25 * opacity),
+                        mantle.withValues(alpha: opacity * 0.95),
+                      ],
+                    ),
                   ),
+                  child: child,
                 ),
-                child: child,
-              ),
-              child: SafeArea(
-                bottom: false,
-                child: SizedBox(
-                  height: kToolbarHeight,
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: padding),
-                    child: const Row(
-                      children: [AnigenLogo(size: 22, shadow: true)],
+                child: SafeArea(
+                  bottom: false,
+                  child: SizedBox(
+                    height: kToolbarHeight,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: padding),
+                      child: const Row(
+                        children: [AnigenLogo(size: 22, shadow: true)],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -318,6 +322,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   final _controller = PageController();
   Timer? _timer;
   int _page = 0;
+  bool _hovering = false;
 
   @override
   void initState() {
@@ -347,6 +352,17 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     });
   }
 
+  /// Steps by hand from the arrows, wrapping around at the ends.
+  void _step(int direction) {
+    final count = widget.items.length;
+    _controller.animateToPage(
+      (_page + direction + count) % count,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOutCubic,
+    );
+    _restartTimer();
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
@@ -355,106 +371,138 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     final posterWidth = (width - 64).clamp(0.0, 340.0);
     const dotsHeight = 22.0;
     final height = widget.wide
-        ? 520.0
+        ? heroHeight(context)
         : topPadding + 8 + posterWidth * 3 / 2 + 8 + dotsHeight;
 
     final background = Theme.of(context).scaffoldBackgroundColor;
-    return SizedBox(
-      height: height,
-      child: Stack(
-        children: [
-          // One backdrop behind all the cards that cross-fades as you swipe,
-          // so there's no seam between them.
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                final position =
-                    _controller.hasClients &&
-                        _controller.position.haveDimensions
-                    ? _controller.page!
-                    : _page.toDouble();
-                final index = position.floor().clamp(0, items.length - 1);
-                final t = (position - index).clamp(0.0, 1.0);
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _Backdrop(key: ValueKey(index), media: items[index]),
-                    if (t > 0 && index + 1 < items.length)
-                      Opacity(
-                        key: ValueKey(index + 1),
-                        opacity: t,
-                        child: _Backdrop(media: items[index + 1]),
-                      ),
-                  ],
-                );
-              },
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          children: [
+            // One backdrop behind all the cards that cross-fades as you swipe,
+            // so there's no seam between them.
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  final position =
+                      _controller.hasClients &&
+                          _controller.position.haveDimensions
+                      ? _controller.page!
+                      : _page.toDouble();
+                  final index = position.floor().clamp(0, items.length - 1);
+                  final t = (position - index).clamp(0.0, 1.0);
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _Backdrop(key: ValueKey(index), media: items[index]),
+                      if (t > 0 && index + 1 < items.length)
+                        Opacity(
+                          key: ValueKey(index + 1),
+                          opacity: t,
+                          child: _Backdrop(media: items[index + 1]),
+                        ),
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0, 0.6, 1],
-                  colors: [
-                    Colors.transparent,
-                    background.withValues(alpha: 0.6),
-                    background,
-                  ],
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, 0.6, 1],
+                    colors: [
+                      Colors.transparent,
+                      background.withValues(alpha: 0.6),
+                      background,
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              // Swiping by hand resets the countdown.
-              if (notification is ScrollStartNotification &&
-                  notification.dragDetails != null) {
-                _restartTimer();
-              }
-              return false;
-            },
-            child: PageView.builder(
-              controller: _controller,
-              itemCount: items.length,
-              onPageChanged: (page) => setState(() => _page = page),
-              itemBuilder: (context, i) => Padding(
-                padding: EdgeInsets.only(bottom: widget.wide ? 0 : dotsHeight),
-                child: _Hero(media: items[i], wide: widget.wide),
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                // Swiping by hand resets the countdown.
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  _restartTimer();
+                }
+                return false;
+              },
+              child: PageView.builder(
+                controller: _controller,
+                itemCount: items.length,
+                onPageChanged: (page) => setState(() => _page = page),
+                itemBuilder: (context, i) => Padding(
+                  padding: EdgeInsets.only(
+                    bottom: widget.wide ? 0 : dotsHeight,
+                  ),
+                  child: _Hero(media: items[i], wide: widget.wide),
+                ),
               ),
             ),
-          ),
-          if (items.length > 1)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: widget.wide ? 16 : 4,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < items.length; i++)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: i == _page ? 18 : 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: i == _page
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.white.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(3),
+            if (items.length > 1)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: widget.wide ? 16 : 4,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < items.length; i++)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: i == _page ? 18 : 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: i == _page
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.white.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-        ],
+            if (widget.wide && _hovering && items.length > 1) ...[
+              Positioned(
+                left: 0,
+                top: topPadding,
+                bottom: 0,
+                child: ScrollArrow(
+                  forward: false,
+                  width: 40,
+                  onTap: () => _step(-1),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                top: topPadding,
+                bottom: 0,
+                child: ScrollArrow(
+                  forward: true,
+                  width: 40,
+                  onTap: () => _step(1),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
+
+/// The wide hero grows with the window, within reason.
+double heroHeight(BuildContext context) =>
+    (MediaQuery.sizeOf(context).width * 0.42).clamp(460.0, 640.0);
 
 /// A featured title's art, soft and wide. AniList's landscape banner when
 /// there is one, so it doesn't have to be a stretched portrait.
@@ -572,15 +620,24 @@ class _Hero extends StatelessWidget {
 
     if (wide) {
       return SizedBox(
-        height: 520,
+        height: heroHeight(context),
         child: Stack(
           fit: StackFit.expand,
           children: [
             Padding(
-              padding: EdgeInsets.fromLTRB(48, topPadding + 16, 48, 32),
+              padding: EdgeInsets.fromLTRB(56, topPadding + 16, 56, 40),
               child: Row(
                 children: [
-                  Expanded(child: info),
+                  // Long lines are hard to read across a desktop window.
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 620),
+                        child: info,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 48),
                   AspectRatio(
                     aspectRatio: 2 / 3,
