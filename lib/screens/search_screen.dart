@@ -184,7 +184,8 @@ class SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final padding = width >= 900 ? 24.0 : 16.0;
+    final wide = width >= wideWidth;
+    final padding = wide ? 24.0 : 16.0;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -195,43 +196,48 @@ class SearchScreenState extends State<SearchScreen> {
             children: [
               Padding(
                 padding: EdgeInsets.fromLTRB(padding, 12, padding, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        textInputAction: TextInputAction.search,
-                        onSubmitted: (query) => _search(query: query),
-                        decoration: InputDecoration(
-                          hintText: 'search shows, movies...',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.close),
-                                  onPressed: _searchController.clear,
-                                )
-                              : null,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            textInputAction: TextInputAction.search,
+                            onSubmitted: (query) => _search(query: query),
+                            decoration: InputDecoration(
+                              hintText: 'search shows, movies...',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.close),
+                                      onPressed: _searchController.clear,
+                                    )
+                                  : null,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          tooltip: 'filters',
+                          onPressed: _openFilters,
+                          icon: Badge(
+                            isLabelVisible: !_filter.isEmpty,
+                            label: Text('${_filter.count}'),
+                            child: const Icon(Icons.tune),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    IconButton.filledTonal(
-                      tooltip: 'filters',
-                      onPressed: _openFilters,
-                      icon: Badge(
-                        isLabelVisible: !_filter.isEmpty,
-                        label: Text('${_filter.count}'),
-                        child: const Icon(Icons.tune),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
               if (_isLoading) const LinearProgressIndicator(minHeight: 2),
               Expanded(
                 child: _hasSearched
                     ? _buildResults(padding, width)
-                    : _buildIdle(padding),
+                    : _buildIdle(padding, wide),
               ),
             ],
           ),
@@ -240,7 +246,8 @@ class SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildIdle(double padding) {
+  Widget _buildIdle(double padding, bool wide) {
+    final posterWidth = wide ? 150.0 : 112.0;
     if (_recentAnime.isEmpty) {
       return const _Message(
         icon: Icons.search,
@@ -252,7 +259,7 @@ class SearchScreenState extends State<SearchScreen> {
         CardRow(
           title: 'recent searches',
           padding: padding,
-          height: 112 * 3 / 2 + 42,
+          height: posterWidth * 3 / 2 + 42,
           itemCount: _recentAnime.length,
           trailing: TextButton(
             onPressed: _clearRecentAnime,
@@ -261,7 +268,7 @@ class SearchScreenState extends State<SearchScreen> {
           itemBuilder: (context, i) => PosterCard(
             title: _recentAnime[i].title,
             image: _recentAnime[i].image,
-            width: 112,
+            width: posterWidth,
             onTap: () => _open(_recentAnime[i]),
           ),
         ),
@@ -286,7 +293,7 @@ class SearchScreenState extends State<SearchScreen> {
           ? const SizedBox.shrink()
           : const _Message(icon: Icons.search_off, text: 'no results found');
     }
-    final columns = (width / 150).floor().clamp(3, 8);
+    final columns = (width / 160).floor().clamp(3, 10);
     return RefreshIndicator(
       onRefresh: _search,
       child: GridView.builder(

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -63,6 +64,7 @@ class AnigenApp extends StatelessWidget {
     return MaterialApp(
       title: 'Anigen',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const _AppScrollBehavior(),
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -142,4 +144,15 @@ class AnigenApp extends StatelessWidget {
       home: const HomeScreen(),
     );
   }
+}
+
+/// Lets a mouse drag rows and carousels too, as on touch screens.
+class _AppScrollBehavior extends MaterialScrollBehavior {
+  const _AppScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    ...super.dragDevices,
+    PointerDeviceKind.mouse,
+  };
 }

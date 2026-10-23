@@ -244,7 +244,7 @@ class _TitleScreenState extends State<TitleScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= 900;
+    final wide = width >= wideWidth;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -255,17 +255,35 @@ class _TitleScreenState extends State<TitleScreen> {
         listenable: Listenable.merge([_library, _playback]),
         builder: (context, _) => CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(child: _buildHeader(wide)),
+            if (wide)
+              SliverToBoxAdapter(child: _buildWideHeader())
+            else ...[
+              SliverToBoxAdapter(child: _buildHeader()),
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _maxWidth),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _buildDetails(wide: false),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             SliverToBoxAdapter(
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
-                  child: _buildDetails(),
+                  constraints: const BoxConstraints(maxWidth: _maxWidth),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: wide ? 32 : 16),
+                    child: _buildTabs(),
+                  ),
                 ),
               ),
             ),
             ...switch (_tab) {
-              _Tab.episodes => _buildEpisodes(),
+              _Tab.episodes => _buildEpisodes(width, wide),
               _Tab.seasons => [_buildSeasons()],
               _Tab.moreLikeThis => [_buildMoreLikeThis(width)],
             },
@@ -278,56 +296,87 @@ class _TitleScreenState extends State<TitleScreen> {
     );
   }
 
-  Widget _buildHeader(bool wide) {
-    final image = _title.image;
+  /// How wide the page's content gets on big screens.
+  static const _maxWidth = 1100.0;
+
+  /// Blurred, zoomed poster as the backdrop, fading into the page.
+  List<Widget> _backdrop() => [
+    SoftBackdrop(_title.image, decodeWidth: 24, opacity: 0.55),
+    DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.3),
+            Theme.of(context).scaffoldBackgroundColor,
+          ],
+        ),
+      ),
+    ),
+  ];
+
+  Widget _poster(double height) => Container(
+    height: height,
+    width: height * 2 / 3,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(10),
+      boxShadow: const [
+        BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, 8)),
+      ],
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: NetImage(_title.image),
+  );
+
+  Widget _buildHeader() {
     final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight;
-    final posterHeight = wide ? 300.0 : 240.0;
+    const posterHeight = 240.0;
     return SizedBox(
       height: topPadding + posterHeight + 24,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Blurred, zoomed poster as the backdrop
-          SoftBackdrop(image, decodeWidth: 24, opacity: 0.55),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.3),
-                  Theme.of(context).scaffoldBackgroundColor,
-                ],
-              ),
-            ),
-          ),
+          ..._backdrop(),
           Padding(
             padding: EdgeInsets.only(top: topPadding),
-            child: Center(
-              child: Container(
-                height: posterHeight,
-                width: posterHeight * 2 / 3,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black54,
-                      blurRadius: 24,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: NetImage(image),
-              ),
-            ),
+            child: Center(child: _poster(posterHeight)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDetails() {
+  /// Poster beside the details, so a big screen doesn't open on a lone
+  /// centred poster with everything else below the fold.
+  Widget _buildWideHeader() {
+    final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Stack(fit: StackFit.expand, children: _backdrop()),
+        ),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _maxWidth),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(32, topPadding + 8, 32, 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _poster(360),
+                  const SizedBox(width: 32),
+                  Expanded(child: _buildDetails(wide: true)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetails({required bool wide}) {
     final theme = Theme.of(context);
     final info = _info;
     final history = _library.historyFor(_source?.animeId);
@@ -364,207 +413,239 @@ class _TitleScreenState extends State<TitleScreen> {
         ? null
         : history?.episodes[resume.number];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            _title.title,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          if (info != null &&
-              info.titleRomaji != null &&
-              info.titleRomaji != info.title)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                info.titleRomaji!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          const SizedBox(height: 10),
-          DefaultTextStyle.merge(
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 10,
-              runSpacing: 6,
-              children: meta,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 48,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: theme.colorScheme.onSurface,
-                foregroundColor: crust,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              onPressed: _episodes == null || _episodes!.isEmpty
-                  ? null
-                  : isPlayingThis
-                  ? _playback.expand
-                  : () => _play(),
-              icon: _episodes == null && _sourceError == null
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: crust,
-                      ),
-                    )
-                  : Icon(isPlayingThis ? Icons.open_in_full : Icons.play_arrow),
-              label: Text(
-                _episodes == null && _sourceError == null
-                    ? 'finding episodes'
-                    : playLabel,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+    final align = wide ? TextAlign.start : TextAlign.center;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          _title.title,
+          textAlign: align,
+          style:
+              (wide
+                      ? theme.textTheme.headlineMedium
+                      : theme.textTheme.headlineSmall)
+                  ?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        if (info != null &&
+            info.titleRomaji != null &&
+            info.titleRomaji != info.title)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              info.titleRomaji!,
+              textAlign: align,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-          if (resumeProgress != null && !isPlayingThis) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: WatchProgressBar(resumeProgress.fraction),
+        const SizedBox(height: 10),
+        DefaultTextStyle.merge(
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          child: Wrap(
+            alignment: wide ? WrapAlignment.start : WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 6,
+            children: meta,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _fitPlayBlock(
+          wide,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 48,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.onSurface,
+                    foregroundColor: crust,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  onPressed: _episodes == null || _episodes!.isEmpty
+                      ? null
+                      : isPlayingThis
+                      ? _playback.expand
+                      : () => _play(),
+                  icon: _episodes == null && _sourceError == null
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: crust,
+                          ),
+                        )
+                      : Icon(
+                          isPlayingThis ? Icons.open_in_full : Icons.play_arrow,
+                        ),
+                  label: Text(
+                    _episodes == null && _sourceError == null
+                        ? 'finding episodes'
+                        : playLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${((resumeProgress.durationMs - resumeProgress.positionMs) / 60000).ceil()}m left',
-                  style: theme.textTheme.labelSmall,
-                ),
-              ],
-            ),
-          ],
-          if (_sourceError != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _sourceError!,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton.icon(
-                  onPressed: _resolveSource,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('retry'),
-                ),
-                TextButton.icon(
-                  onPressed: _changeSource,
-                  icon: const Icon(Icons.swap_horiz),
-                  label: const Text('pick source'),
-                ),
-              ],
-            ),
-          ],
-          if (info?.description != null) ...[
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: () =>
-                  setState(() => _descriptionExpanded = !_descriptionExpanded),
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: Text(
-                  info!.description!,
-                  maxLines: _descriptionExpanded ? null : 4,
-                  overflow: _descriptionExpanded ? null : TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-                ),
               ),
-            ),
-          ],
-          if (info != null && info.genres.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _LabeledLine('genres', info.genres.join(', ')),
-          ],
-          if (info != null && info.studios.isNotEmpty)
-            _LabeledLine('studio', info.studios.join(', ')),
+              if (resumeProgress != null && !isPlayingThis) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: WatchProgressBar(resumeProgress.fraction),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${((resumeProgress.durationMs - resumeProgress.positionMs) / 60000).ceil()}m left',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (_sourceError != null) ...[
           const SizedBox(height: 12),
+          Text(
+            _sourceError!,
+            textAlign: align,
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment: wide
+                ? MainAxisAlignment.start
+                : MainAxisAlignment.center,
             children: [
-              _ActionIcon(
-                icon: _library.isFavourite(_title)
-                    ? Icons.favorite
-                    : Icons.favorite_border,
-                label: 'favourite',
-                onTap: _toggleFavourite,
+              TextButton.icon(
+                onPressed: _resolveSource,
+                icon: const Icon(Icons.refresh),
+                label: const Text('retry'),
               ),
-              ListenableBuilder(
-                listenable: AniListAccount.instance,
-                builder: (context, _) {
-                  final account = AniListAccount.instance;
-                  final tracked = account.entryFor(_anilistId) != null;
-                  return _ActionIcon(
-                    icon: tracked
-                        ? Icons.playlist_add_check
-                        : Icons.playlist_add,
-                    label: 'tracking',
-                    color: !account.isSignedIn
-                        ? theme.disabledColor
-                        : tracked
-                        ? theme.colorScheme.primary
-                        : null,
-                    onTap: _openTracking,
-                  );
-                },
+              TextButton.icon(
+                onPressed: _changeSource,
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('pick source'),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _TabLabel(
-                  label: 'episodes',
-                  selected: _tab == _Tab.episodes,
-                  onTap: () => setState(() => _tab = _Tab.episodes),
-                ),
-                // Only worth a tab when there is more than this one title
-                if (_seasons.length > 1)
-                  _TabLabel(
-                    label: 'seasons',
-                    selected: _tab == _Tab.seasons,
-                    onTap: () => setState(() => _tab = _Tab.seasons),
-                  ),
-                if (_anilistId != null || _malId != null)
-                  _TabLabel(
-                    label: 'more like this',
-                    selected: _tab == _Tab.moreLikeThis,
-                    onTap: () => setState(() => _tab = _Tab.moreLikeThis),
-                  ),
-              ],
+        ],
+        if (info?.description != null) ...[
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () =>
+                setState(() => _descriptionExpanded = !_descriptionExpanded),
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child: Text(
+                info!.description!,
+                maxLines: _descriptionExpanded ? null : 4,
+                overflow: _descriptionExpanded ? null : TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+              ),
             ),
           ),
         ],
-      ),
+        if (info != null && info.genres.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _LabeledLine('genres', info.genres.join(', ')),
+        ],
+        if (info != null && info.studios.isNotEmpty)
+          _LabeledLine('studio', info.studios.join(', ')),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: wide
+              ? MainAxisAlignment.start
+              : MainAxisAlignment.spaceEvenly,
+          children: [
+            _ActionIcon(
+              icon: _library.isFavourite(_title)
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              label: 'favourite',
+              onTap: _toggleFavourite,
+            ),
+            ListenableBuilder(
+              listenable: AniListAccount.instance,
+              builder: (context, _) {
+                final account = AniListAccount.instance;
+                final tracked = account.entryFor(_anilistId) != null;
+                return _ActionIcon(
+                  icon: tracked ? Icons.playlist_add_check : Icons.playlist_add,
+                  label: 'tracking',
+                  color: !account.isSignedIn
+                      ? theme.disabledColor
+                      : tracked
+                      ? theme.colorScheme.primary
+                      : null,
+                  onTap: _openTracking,
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
-  List<Widget> _buildEpisodes() {
+  /// A full-width play button is a long bar on a desktop; keep it
+  /// button-sized there.
+  Widget _fitPlayBlock(bool wide, Widget child) => wide
+      ? Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: child,
+          ),
+        )
+      : child;
+
+  Widget _buildTabs() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 1),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _TabLabel(
+                label: 'episodes',
+                selected: _tab == _Tab.episodes,
+                onTap: () => setState(() => _tab = _Tab.episodes),
+              ),
+              // Only worth a tab when there is more than this one title
+              if (_seasons.length > 1)
+                _TabLabel(
+                  label: 'seasons',
+                  selected: _tab == _Tab.seasons,
+                  onTap: () => setState(() => _tab = _Tab.seasons),
+                ),
+              if (_anilistId != null || _malId != null)
+                _TabLabel(
+                  label: 'more like this',
+                  selected: _tab == _Tab.moreLikeThis,
+                  onTap: () => setState(() => _tab = _Tab.moreLikeThis),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildEpisodes(double width, bool wide) {
     final episodes = _episodes;
     if (episodes == null) {
       return [
@@ -591,6 +672,33 @@ class _TitleScreenState extends State<TitleScreen> {
     final playing = _playback.title?.animeId == _source?.animeId
         ? _playback.episode?.url
         : null;
+    Widget tile(Episode episode) => EpisodeTile(
+      episode: episode,
+      image: _title.image,
+      progress: history?.episodes[episode.number],
+      isPlaying: episode.url == playing,
+      onTap: () => _play(episode),
+    );
+    if (wide) {
+      // Two columns, so a long show isn't a mile of half-empty rows
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(
+            horizontal: width > _maxWidth ? (width - _maxWidth) / 2 + 16 : 16,
+            vertical: 8,
+          ),
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 8,
+              mainAxisExtent: 76,
+            ),
+            itemCount: episodes.length,
+            itemBuilder: (context, index) => tile(episodes[index]),
+          ),
+        ),
+      ];
+    }
     return [
       SliverList.builder(
         itemCount: episodes.length,
@@ -598,14 +706,8 @@ class _TitleScreenState extends State<TitleScreen> {
           final episode = episodes[index];
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1000),
-              child: EpisodeTile(
-                episode: episode,
-                image: _title.image,
-                progress: history?.episodes[episode.number],
-                isPlaying: episode.url == playing,
-                onTap: () => _play(episode),
-              ),
+              constraints: const BoxConstraints(maxWidth: _maxWidth),
+              child: tile(episode),
             ),
           );
         },
@@ -621,7 +723,7 @@ class _TitleScreenState extends State<TitleScreen> {
         final isCurrent = media.id == _anilistId;
         return Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1000),
+            constraints: const BoxConstraints(maxWidth: _maxWidth),
             child: _SeasonTile(
               media: media,
               isCurrent: isCurrent,
@@ -644,10 +746,10 @@ class _TitleScreenState extends State<TitleScreen> {
         ),
       );
     }
-    final columns = (width.clamp(0, 1000) / 130).floor().clamp(3, 8);
+    final columns = (width.clamp(0, _maxWidth) / 140).floor().clamp(3, 8);
     return SliverPadding(
       padding: EdgeInsets.symmetric(
-        horizontal: width > 1000 ? (width - 1000) / 2 + 16 : 16,
+        horizontal: width > _maxWidth ? (width - _maxWidth) / 2 + 16 : 16,
         vertical: 12,
       ),
       sliver: SliverGrid.builder(

@@ -9,6 +9,12 @@ const crust = Color(0xFF000000);
 const mantle = Color(0xFF0A0A0A);
 const green = Color(0xFF46D369);
 
+/// From here tablets get the navigation rail instead of the bottom bar.
+const mediumWidth = 600.0;
+
+/// From here pages use their large-screen layouts.
+const wideWidth = 900.0;
+
 LibraryTitle titleFromAnilist(AniListMedia media) => LibraryTitle(
   title: media.title,
   image: media.image,
@@ -235,8 +241,9 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// A titled, horizontally scrolling row of cards.
-class CardRow extends StatelessWidget {
+/// A titled, horizontally scrolling row of cards. With a mouse, hovering
+/// shows arrows at the ends to page through it.
+class CardRow extends StatefulWidget {
   final String title;
   final double height;
   final int itemCount;
@@ -255,23 +262,179 @@ class CardRow extends StatelessWidget {
   });
 
   @override
+  State<CardRow> createState() => _CardRowState();
+}
+
+class _CardRowState extends State<CardRow> {
+  final _scroll = ScrollController();
+  bool _hovering = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _page(int direction) {
+    final position = _scroll.position;
+    _scroll.animateTo(
+      (position.pixels + direction * position.viewportDimension * 0.8).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (itemCount == 0) return const SizedBox.shrink();
+    if (widget.itemCount == 0) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionHeader(title, padding: padding, trailing: trailing),
+        SectionHeader(
+          widget.title,
+          padding: widget.padding,
+          trailing: widget.trailing,
+        ),
         SizedBox(
-          height: height,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.symmetric(horizontal: padding),
-            itemCount: itemCount,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
-            itemBuilder: itemBuilder,
+          height: widget.height,
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hovering = true),
+            onExit: (_) => setState(() => _hovering = false),
+            child: Stack(
+              children: [
+                ListView.separated(
+                  controller: _scroll,
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: widget.padding),
+                  itemCount: widget.itemCount,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 10),
+                  itemBuilder: widget.itemBuilder,
+                ),
+                if (_hovering)
+                  Positioned.fill(
+                    child: ListenableBuilder(
+                      listenable: _scroll,
+                      builder: (context, _) {
+                        if (!_scroll.hasClients ||
+                            !_scroll.position.hasContentDimensions) {
+                          return const SizedBox.shrink();
+                        }
+                        final position = _scroll.position;
+                        return Stack(
+                          children: [
+                            if (position.pixels > position.minScrollExtent)
+                              Positioned(
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: ScrollArrow(
+                                  forward: false,
+                                  onTap: () => _page(-1),
+                                ),
+                              ),
+                            if (position.pixels < position.maxScrollExtent)
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: ScrollArrow(
+                                  forward: true,
+                                  onTap: () => _page(1),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A dark strip with a chevron at the end of a horizontal row, for mice.
+class ScrollArrow extends StatelessWidget {
+  final bool forward;
+  final VoidCallback onTap;
+  final double width;
+
+  const ScrollArrow({
+    super.key,
+    required this.forward,
+    required this.onTap,
+    this.width = 48,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: forward ? Alignment.centerRight : Alignment.centerLeft,
+                end: forward ? Alignment.centerLeft : Alignment.centerRight,
+                colors: [
+                  Colors.black.withValues(alpha: 0.85),
+                  Colors.black.withValues(alpha: 0),
+                ],
+              ),
+            ),
+            child: Icon(
+              forward ? Icons.chevron_right : Icons.chevron_left,
+              size: 36,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Rings a poster while the mouse is over it; the ink highlight would sit
+/// under the image and never show.
+class HoverRing extends StatefulWidget {
+  final Widget child;
+  final double radius;
+
+  const HoverRing({super.key, required this.child, this.radius = 8});
+
+  @override
+  State<HoverRing> createState() => _HoverRingState();
+}
+
+class _HoverRingState extends State<HoverRing> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.radius),
+          border: Border.all(
+            color: _hovering ? Colors.white : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: widget.child,
+      ),
     );
   }
 }
@@ -307,9 +470,11 @@ class PosterCard extends StatelessWidget {
           children: [
             AspectRatio(
               aspectRatio: 2 / 3,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: NetImage(image),
+              child: HoverRing(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: NetImage(image),
+                ),
               ),
             ),
             if (showTitle) ...[
