@@ -35,16 +35,18 @@ class UpdateNotice {
     if (!navigator.mounted) return;
 
     final found = release;
+    final installs = found.apkUrl != null;
     final controller = messenger.showSnackBar(
       SnackBar(
         content: Text('anigen v${found.version} is out'),
         duration: const Duration(seconds: 10),
         showCloseIcon: true,
         action: SnackBarAction(
-          label: AppUpdate.isSupported ? 'update' : 'view release',
-          onPressed: () => AppUpdate.isSupported
+          label: installs ? 'update' : 'view release',
+          onPressed: () => installs
               ? showDialog<void>(
                   context: navigator.context,
+                  barrierDismissible: false,
                   builder: (context) => UpdateDialog(release: found),
                 )
               : openReleasePage(found),
@@ -79,42 +81,52 @@ class _UpdateDialogState extends State<UpdateDialog> {
   double? _progress;
   String? _error;
   bool _needsPermission = false;
+  bool _busy = false;
 
   bool get _downloading => _progress != null;
 
   bool get _installs => widget.release.apkUrl != null;
 
   Future<void> _update() async {
-    if (!_installs) {
-      await openReleasePage(widget.release);
-      if (mounted) Navigator.of(context).pop();
-      return;
-    }
-    if (!await AppUpdate.canInstall()) {
-      // Android wants the "install unknown apps" switch on first
-      setState(() => _needsPermission = true);
-      await AppUpdate.openInstallSettings();
-      return;
-    }
+    if (_busy) return;
     setState(() {
+      _busy = true;
       _needsPermission = false;
       _error = null;
-      _progress = 0;
     });
     try {
+      if (!_installs) {
+        await openReleasePage(widget.release);
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+      final canInstall = await AppUpdate.canInstall();
+      if (!mounted) return;
+      if (!canInstall) {
+        // Android wants the "install unknown apps" switch on first
+        setState(() => _needsPermission = true);
+        await AppUpdate.openInstallSettings();
+        return;
+      }
+      setState(() => _progress = 0);
       final apk = await AppUpdate.download(
         widget.release,
         onProgress: (progress) {
           if (mounted) setState(() => _progress = progress);
         },
       );
+      if (!mounted) return;
       await AppUpdate.install(apk);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) {
         setState(() {
+          _busy = false;
           _progress = null;
-          _error = e.toString().replaceFirst('Exception: ', '');
         });
       }
     }
@@ -125,74 +137,80 @@ class _UpdateDialogState extends State<UpdateDialog> {
     final theme = Theme.of(context);
     final release = widget.release;
     final sizeMb = release.apkSize / (1024 * 1024);
-    return AlertDialog(
-      title: Text('v${release.version} is out'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                AppUpdate.currentVersion.isNotEmpty
-                    ? 'you have v${AppUpdate.currentVersion}'
-                    : 'you have a local build',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (release.notes.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(release.notes, style: theme.textTheme.bodyMedium),
-              ],
-              if (_needsPermission) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  'allow anigen to install apps, then come back and tap '
-                  'update again',
-                ),
-              ],
-              if (_downloading) ...[
-                const SizedBox(height: 16),
-                LinearProgressIndicator(value: _progress),
-                const SizedBox(height: 6),
+    return PopScope(
+      canPop: !_busy,
+      child: AlertDialog(
+        title: Text('v${release.version} is out'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 Text(
-                  _progress! >= 1
-                      ? 'installing...'
-                      : 'downloading ${(_progress! * 100).round()}%',
-                  style: theme.textTheme.labelSmall,
+                  AppUpdate.currentVersion.isNotEmpty
+                      ? 'you have v${AppUpdate.currentVersion}'
+                      : 'you have a local build',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
+                if (release.notes.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(release.notes, style: theme.textTheme.bodyMedium),
+                ],
+                if (_needsPermission) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'allow anigen to install apps, then come back and tap '
+                    'update again',
+                  ),
+                ],
+                if (_downloading) ...[
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(value: _progress),
+                  const SizedBox(height: 6),
+                  Text(
+                    _progress! >= 1
+                        ? 'installing...'
+                        : 'downloading ${(_progress! * 100).round()}%',
+                    style: theme.textTheme.labelSmall,
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ],
               ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-              ],
-            ],
+            ),
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _downloading ? null : () => Navigator.of(context).pop(),
-          child: const Text('later'),
-        ),
-        if (_installs)
+        actions: [
           TextButton(
-            onPressed: _downloading ? null : () => openReleasePage(release),
-            child: const Text('release page'),
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('later'),
           ),
-        FilledButton(
-          onPressed: _downloading ? null : _update,
-          child: Text(
-            !_installs
-                ? 'view release'
-                : sizeMb > 0
-                ? 'update · ${sizeMb.toStringAsFixed(0)} MB'
-                : 'update',
+          if (_installs)
+            TextButton(
+              onPressed: _busy ? null : () => openReleasePage(release),
+              child: const Text('release page'),
+            ),
+          FilledButton(
+            onPressed: _busy ? null : _update,
+            child: Text(
+              !_installs
+                  ? 'view release'
+                  : sizeMb > 0
+                  ? 'update · ${sizeMb.toStringAsFixed(0)} MB'
+                  : 'update',
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -28,7 +28,7 @@ class SearchScreenState extends State<SearchScreen> {
   List<AniListMedia> _results = [];
   List<LibraryTitle> _recentAnime = [];
   SearchFilter _filter = const SearchFilter();
-  final _genres = ValueNotifier<List<String>>([]);
+  final _genres = ValueNotifier(const AsyncSnapshot<List<String>>.nothing());
   bool _isLoading = false;
   bool _hasSearched = false;
   String? _error;
@@ -63,11 +63,7 @@ class SearchScreenState extends State<SearchScreen> {
       return;
     }
     if (query.isEmpty) {
-      setState(() {
-        _hasSearched = false;
-        _results = [];
-        _error = null;
-      });
+      _returnToIdle();
       return;
     }
     if (query.length >= 2) {
@@ -75,6 +71,17 @@ class SearchScreenState extends State<SearchScreen> {
         _search(query: query);
       });
     }
+  }
+
+  void _returnToIdle() {
+    _debounce?.cancel();
+    _searchId++;
+    setState(() {
+      _hasSearched = false;
+      _isLoading = false;
+      _results = [];
+      _error = null;
+    });
   }
 
   Future<void> _loadRecentAnime() async {
@@ -148,28 +155,41 @@ class SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<void> _loadGenres() async {
+    if (!mounted || _genres.value.connectionState == ConnectionState.waiting) {
+      return;
+    }
+    _genres.value = const AsyncSnapshot.waiting();
+    try {
+      final genres = await _provider.getGenres();
+      if (mounted) {
+        _genres.value = AsyncSnapshot.withData(ConnectionState.done, genres);
+      }
+    } catch (e) {
+      if (mounted) {
+        _genres.value = AsyncSnapshot.withError(ConnectionState.done, e);
+      }
+    }
+  }
+
   Future<void> _openFilters() async {
     FocusScope.of(context).unfocus();
-    if (_genres.value.isEmpty) {
-      _provider.getGenres().then((genres) {
-        if (mounted) _genres.value = genres;
-      }, onError: (_) {});
-    }
+    if (!_genres.value.hasData) _loadGenres();
     final filter = await showModalBottomSheet<SearchFilter>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       useRootNavigator: true,
-      builder: (context) => _FilterSheet(initial: _filter, genres: _genres),
+      builder: (context) => _FilterSheet(
+        initial: _filter,
+        genres: _genres,
+        onRetryGenres: _loadGenres,
+      ),
     );
     if (filter == null || !mounted) return;
     setState(() => _filter = filter);
     if (_searchController.text.isEmpty && filter.isEmpty) {
-      setState(() {
-        _hasSearched = false;
-        _results = [];
-        _error = null;
-      });
+      _returnToIdle();
     } else {
       _search();
     }
@@ -202,19 +222,22 @@ class SearchScreenState extends State<SearchScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            textInputAction: TextInputAction.search,
-                            onSubmitted: (query) => _search(query: query),
-                            decoration: InputDecoration(
-                              hintText: 'search shows, movies...',
-                              prefixIcon: const Icon(Icons.search),
-                              suffixIcon: _searchController.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(Icons.close),
-                                      onPressed: _searchController.clear,
-                                    )
-                                  : null,
+                          child: ValueListenableBuilder<TextEditingValue>(
+                            valueListenable: _searchController,
+                            builder: (context, value, _) => TextField(
+                              controller: _searchController,
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (query) => _search(query: query),
+                              decoration: InputDecoration(
+                                hintText: 'search shows, movies...',
+                                prefixIcon: const Icon(Icons.search),
+                                suffixIcon: value.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.close),
+                                        onPressed: _searchController.clear,
+                                      )
+                                    : null,
+                              ),
                             ),
                           ),
                         ),
@@ -362,9 +385,14 @@ class _FilterSheet extends StatefulWidget {
   final SearchFilter initial;
 
   /// Genres arrive from AniList while the sheet may already be open.
-  final ValueListenable<List<String>> genres;
+  final ValueListenable<AsyncSnapshot<List<String>>> genres;
+  final VoidCallback onRetryGenres;
 
-  const _FilterSheet({required this.initial, required this.genres});
+  const _FilterSheet({
+    required this.initial,
+    required this.genres,
+    required this.onRetryGenres,
+  });
 
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
@@ -400,7 +428,12 @@ class _FilterSheetState extends State<_FilterSheet> {
         children: [
           Text(title, style: label),
           const SizedBox(height: 6),
-          Wrap(spacing: 8, runSpacing: 4, children: chips),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: chips,
+          ),
         ],
       ),
     );
@@ -470,8 +503,21 @@ class _FilterSheetState extends State<_FilterSheet> {
                 ),
                 ValueListenableBuilder(
                   valueListenable: widget.genres,
-                  builder: (context, genres, _) {
-                    if (genres.isEmpty) {
+                  builder: (context, snapshot, _) {
+                    if (snapshot.hasError) {
+                      return section('genres', [
+                        Text(
+                          'couldn\'t load genres',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                        TextButton(
+                          onPressed: widget.onRetryGenres,
+                          child: const Text('retry'),
+                        ),
+                      ]);
+                    }
+                    final genres = snapshot.data;
+                    if (genres == null) {
                       return const Center(
                         child: Padding(
                           padding: EdgeInsets.all(16),

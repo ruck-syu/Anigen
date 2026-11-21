@@ -33,7 +33,7 @@ class SourceMatcher {
     final titles = {
       _normalise(anime.title),
       if (anime.japaneseTitle != null) _normalise(anime.japaneseTitle!),
-    };
+    }..remove('');
     var best = 0.0;
     for (final name in names) {
       for (final title in titles) {
@@ -41,6 +41,7 @@ class SourceMatcher {
         if (s > best) best = s;
       }
     }
+    if (best < 0.25) return 0;
     return best + _episodeScore(anime.episodes) + _formatScore(anime.type);
   }
 

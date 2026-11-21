@@ -1,5 +1,7 @@
+import 'dart:io' show Platform;
 import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:anigen/models/anime.dart';
 import 'package:anigen/screens/title_screen.dart';
@@ -37,6 +39,7 @@ class PlayerOverlay extends StatefulWidget {
 class _PlayerOverlayState extends State<PlayerOverlay> {
   final _playback = PlaybackController.instance;
   final _videoKey = GlobalKey();
+  _PlayerVideo? _video;
   double _dragExtent = 1;
 
   void _onDragStart(DragStartDetails details) {
@@ -73,6 +76,22 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
         animation: Listenable.merge([widget.sheet, _playback]),
         builder: (context, _) => _build(context, constraints.biggest),
       ),
+    );
+  }
+
+  _PlayerVideo _videoFor(bool edgeToEdge) {
+    // Follow playback state rather than the drag so controls don't flicker.
+    final expanded = _playback.isExpanded;
+    final video = _video;
+    if (video != null &&
+        video.expanded == expanded &&
+        video.edgeToEdge == edgeToEdge) {
+      return video;
+    }
+    return _video = _PlayerVideo(
+      key: _videoKey,
+      expanded: expanded,
+      edgeToEdge: edgeToEdge,
     );
   }
 
@@ -155,15 +174,7 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          RepaintBoundary(
-                            child: _PlayerVideo(
-                              key: _videoKey,
-                              // Follows the player's state rather than the
-                              // drag, so controls don't flicker mid-swipe.
-                              expanded: _playback.isExpanded,
-                              edgeToEdge: landscapePhone,
-                            ),
-                          ),
+                          RepaintBoundary(child: _videoFor(landscapePhone)),
                           if (_playback.isLoading || _playback.error != null)
                             _LoadingOrError(compact: !expanded),
                         ],
@@ -243,7 +254,7 @@ class _PlayerOverlayState extends State<PlayerOverlay> {
   }
 }
 
-class _PlayerVideo extends StatelessWidget {
+class _PlayerVideo extends StatefulWidget {
   final bool expanded;
 
   /// The video fills the screen, so controls keep clear of the edges where
@@ -257,28 +268,52 @@ class _PlayerVideo extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final playback = PlaybackController.instance;
-    final library = LibraryStore.instance;
-    final seek = Duration(seconds: library.seekSeconds);
-    final topBar = [
-      MaterialCustomButton(
-        icon: const Icon(Icons.keyboard_arrow_down),
-        onPressed: playback.minimize,
-      ),
-    ];
-    final fullscreenTopBar = [
-      Expanded(
-        child: Text(
-          '${playback.title?.title ?? ''} · E${playback.episode?.number ?? ''}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
+  State<_PlayerVideo> createState() => _PlayerVideoState();
+}
+
+class _PlayerVideoState extends State<_PlayerVideo> {
+  final _library = LibraryStore.instance;
+  (String, bool)? _subtitleSettings;
+  late SubtitleViewConfiguration _subtitleConfiguration;
+
+  SubtitleViewConfiguration get _subtitles {
+    final settings = (_library.subtitleSize, _library.subtitleBox);
+    if (settings != _subtitleSettings) {
+      final (size, box) = settings;
+      _subtitleConfiguration = SubtitleViewConfiguration(
+        style: TextStyle(
+          height: 1.4,
+          fontSize: LibraryStore.subtitleSizes[size] ?? 32,
+          color: Colors.white,
+          backgroundColor: box ? const Color(0xaa000000) : null,
+          // Without the box, an outline keeps them readable
+          shadows: box
+              ? null
+              : const [
+                  Shadow(color: Colors.black, blurRadius: 3),
+                  Shadow(color: Colors.black, blurRadius: 6),
+                ],
         ),
-      ),
+      );
+      _subtitleSettings = settings;
+    }
+    return _subtitleConfiguration;
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _library,
+    builder: (context, _) => _buildVideo(context),
+  );
+
+  Widget _buildVideo(BuildContext context) {
+    final playback = PlaybackController.instance;
+    final seek = Duration(seconds: _library.seekSeconds);
+    final minimize = MaterialCustomButton(
+      icon: const Icon(Icons.keyboard_arrow_down),
+      onPressed: playback.minimize,
+    );
+    final actions = [
       MaterialCustomButton(
         icon: const Icon(Icons.subtitles_outlined),
         onPressed: () => showSubtitleSheet(context),
@@ -287,6 +322,23 @@ class _PlayerVideo extends StatelessWidget {
         icon: const Icon(Icons.speed),
         onPressed: () => showSpeedSheet(context),
       ),
+    ];
+    final fullscreenTopBar = [
+      Expanded(
+        child: ListenableBuilder(
+          listenable: playback,
+          builder: (context, _) => Text(
+            '${playback.title?.title ?? ''} · E${playback.episode?.number ?? ''}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+      ...actions,
     ];
     final primary = [
       const Spacer(flex: 2),
@@ -337,64 +389,70 @@ class _PlayerVideo extends StatelessWidget {
           ? const EdgeInsets.symmetric(horizontal: 8)
           : const EdgeInsets.only(left: 16, right: 8),
     );
-    final desktopTheme = MaterialDesktopVideoControlsThemeData(
-      seekBarPositionColor: Theme.of(context).colorScheme.error,
-      seekBarThumbColor: Theme.of(context).colorScheme.error,
-      topButtonBar: topBar,
-      bottomButtonBar: [
-        MaterialDesktopCustomButton(
-          icon: const Icon(Icons.skip_previous),
-          onPressed: playback.playPrevious,
-        ),
-        const MaterialDesktopPlayOrPauseButton(),
-        MaterialDesktopCustomButton(
-          icon: const Icon(Icons.skip_next),
-          onPressed: playback.playNext,
-        ),
-        const MaterialDesktopVolumeButton(),
-        const MaterialDesktopPositionIndicator(),
-        const Spacer(),
+    List<Widget> desktopBottomBar({required bool fullscreen}) => [
+      MaterialDesktopCustomButton(
+        icon: const Icon(Icons.skip_previous),
+        onPressed: playback.playPrevious,
+      ),
+      const MaterialDesktopPlayOrPauseButton(),
+      MaterialDesktopCustomButton(
+        icon: const Icon(Icons.skip_next),
+        onPressed: playback.playNext,
+      ),
+      const MaterialDesktopVolumeButton(),
+      const MaterialDesktopPositionIndicator(),
+      const Spacer(),
+      if (!fullscreen)
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.subtitles_outlined),
           onPressed: () => showSubtitleSheet(context),
         ),
-        const MaterialDesktopFullscreenButton(),
-      ],
+      const MaterialDesktopFullscreenButton(),
+    ];
+    final desktopTheme = MaterialDesktopVideoControlsThemeData(
+      seekBarPositionColor: Theme.of(context).colorScheme.error,
+      seekBarThumbColor: Theme.of(context).colorScheme.error,
+      topButtonBar: [minimize],
+      bottomButtonBar: desktopBottomBar(fullscreen: false),
     );
 
     return MaterialVideoControlsTheme(
-      normal: controlsTheme(topBar, edgeSafe: edgeToEdge),
+      normal: controlsTheme([
+        minimize,
+        if (widget.edgeToEdge) ...[const Spacer(), ...actions],
+      ], edgeSafe: widget.edgeToEdge),
       fullscreen: controlsTheme(fullscreenTopBar, edgeSafe: true),
       child: MaterialDesktopVideoControlsTheme(
         normal: desktopTheme,
-        fullscreen: desktopTheme.copyWith(topButtonBar: fullscreenTopBar),
-        child: ListenableBuilder(
-          listenable: library,
-          builder: (context, _) => Video(
-            controller: playback.video,
-            controls: expanded ? _controls : NoVideoControls,
-            subtitleViewConfiguration: SubtitleViewConfiguration(
-              style: TextStyle(
-                height: 1.4,
-                fontSize:
-                    LibraryStore.subtitleSizes[library.subtitleSize] ?? 32,
-                color: Colors.white,
-                backgroundColor: library.subtitleBox
-                    ? const Color(0xaa000000)
-                    : null,
-                // Without the box, an outline keeps them readable
-                shadows: library.subtitleBox
-                    ? null
-                    : const [
-                        Shadow(color: Colors.black, blurRadius: 3),
-                        Shadow(color: Colors.black, blurRadius: 6),
-                      ],
-              ),
-            ),
-          ),
+        fullscreen: desktopTheme.copyWith(
+          topButtonBar: fullscreenTopBar,
+          bottomButtonBar: desktopBottomBar(fullscreen: true),
+        ),
+        child: Video(
+          controller: playback.video,
+          controls: widget.expanded ? _controls : NoVideoControls,
+          subtitleViewConfiguration: _subtitles,
+          // media_kit's Windows fullscreen keeps the title bar on a maximized
+          // window; the runner's own handles that
+          onEnterFullscreen: Platform.isWindows
+              ? () => _setWindowsFullscreen(true)
+              : defaultEnterNativeFullscreen,
+          onExitFullscreen: Platform.isWindows
+              ? () => _setWindowsFullscreen(false)
+              : defaultExitNativeFullscreen,
         ),
       ),
     );
+  }
+
+  static const _window = MethodChannel('anigen/window');
+
+  static Future<void> _setWindowsFullscreen(bool fullscreen) async {
+    try {
+      await _window.invokeMethod('setFullscreen', fullscreen);
+    } catch (e) {
+      debugPrint('fullscreen failed: $e');
+    }
   }
 
   static Widget _controls(VideoState state) {
@@ -911,6 +969,7 @@ void showSubtitleSheet(BuildContext context) {
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) => SafeArea(
       child: ListenableBuilder(
         listenable: Listenable.merge([playback, library]),
@@ -925,52 +984,59 @@ void showSubtitleSheet(BuildContext context) {
             title: Text(label),
             onTap: () => playback.setSubtitle(option),
           );
-          return ListView(
-            shrinkWrap: true,
-            children: [
-              const ListTile(
-                tileColor: Colors.transparent,
-                title: Text('subtitles'),
-              ),
-              if (playback.subtitles.isEmpty)
-                ListTile(
+          return ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const ListTile(
                   tileColor: Colors.transparent,
-                  leading: const Icon(Icons.subtitles_off_outlined),
-                  title: Text(
-                    playback.isLoading ? 'loading...' : 'none for this episode',
-                  ),
-                )
-              else ...[
-                choice(null, 'off'),
-                for (final option in playback.subtitles)
-                  choice(option, option.label.toLowerCase()),
-              ],
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final size in LibraryStore.subtitleSizes.keys)
-                      ChoiceChip(
-                        label: Text(size),
-                        selected: library.subtitleSize == size,
-                        onSelected: (_) => library.setSubtitleSize(size),
-                      ),
-                  ],
+                  title: Text('subtitles'),
                 ),
-              ),
-              SwitchListTile(
-                tileColor: Colors.transparent,
-                title: const Text('background box'),
-                subtitle: library.subtitleBox
-                    ? null
-                    : const Text('outlined text instead'),
-                value: library.subtitleBox,
-                onChanged: library.setSubtitleBox,
-              ),
-            ],
+                if (playback.subtitles.isEmpty)
+                  ListTile(
+                    tileColor: Colors.transparent,
+                    leading: const Icon(Icons.subtitles_off_outlined),
+                    title: Text(
+                      playback.isLoading
+                          ? 'loading...'
+                          : 'none for this episode',
+                    ),
+                  )
+                else ...[
+                  choice(null, 'off'),
+                  for (final option in playback.subtitles)
+                    choice(option, option.label.toLowerCase()),
+                ],
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final size in LibraryStore.subtitleSizes.keys)
+                        ChoiceChip(
+                          label: Text(size),
+                          selected: library.subtitleSize == size,
+                          onSelected: (_) => library.setSubtitleSize(size),
+                        ),
+                    ],
+                  ),
+                ),
+                SwitchListTile(
+                  tileColor: Colors.transparent,
+                  title: const Text('background box'),
+                  subtitle: library.subtitleBox
+                      ? null
+                      : const Text('outlined text instead'),
+                  value: library.subtitleBox,
+                  onChanged: library.setSubtitleBox,
+                ),
+              ],
+            ),
           );
         },
       ),

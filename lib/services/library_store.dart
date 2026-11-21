@@ -118,7 +118,7 @@ class LibraryStore extends ChangeNotifier {
   static const _subtitleSizeKey = 'settings_subtitle_size';
   static const _subtitleBoxKey = 'settings_subtitle_box';
   static const _introKey = 'settings_intro';
-  static const _alertsKey = 'settings_episode_alerts';
+  static const episodeAlertsKey = 'settings_episode_alerts';
 
   /// Double-tap seek lengths offered in settings.
   static const seekChoices = [5, 10, 15, 30];
@@ -145,7 +145,7 @@ class LibraryStore extends ChangeNotifier {
   bool resume = true;
   int seekSeconds = 10;
   String subtitleSize = 'medium';
-  bool subtitleBox = true;
+  bool subtitleBox = false;
   bool showIntro = true;
   bool episodeAlerts = false;
 
@@ -153,25 +153,45 @@ class LibraryStore extends ChangeNotifier {
   void Function(LibraryTitle title, String episode)? onEpisodeWatched;
 
   Future<void> load() async {
+    final SharedPreferences prefs;
     try {
-      final prefs = _prefs = await SharedPreferences.getInstance();
+      prefs = _prefs = await SharedPreferences.getInstance();
+    } catch (e) {
+      debugPrint('could not load library preferences: $e');
+      return;
+    }
+    try {
       final history = prefs.getString(_historyKey);
       if (history != null) {
         for (final e in (jsonDecode(history) as Map<String, dynamic>).entries) {
           _history[e.key] = HistoryEntry.fromJson(e.value);
         }
       }
+    } catch (e) {
+      debugPrint('could not load watch history: $e');
+    }
+    try {
       for (final item
           in prefs.getStringList(_favouritesKey) ?? const <String>[]) {
         _favourites.add(LibraryTitle.fromJson(jsonDecode(item)));
       }
-      prefs.remove(_oldRemoteListKey);
+      if (prefs.containsKey(_oldRemoteListKey)) {
+        await prefs.remove(_oldRemoteListKey);
+      }
+    } catch (e) {
+      debugPrint('could not load favourites: $e');
+    }
+    try {
       final sources = prefs.getString(_sourcesKey);
       if (sources != null) {
         for (final e in (jsonDecode(sources) as Map<String, dynamic>).entries) {
           _sources[int.parse(e.key)] = LibraryTitle.fromJson(e.value);
         }
       }
+    } catch (e) {
+      debugPrint('could not load saved sources: $e');
+    }
+    try {
       autoplay = prefs.getBool(_autoplayKey) ?? true;
       autoSkipIntro = prefs.getBool(_autoSkipKey) ?? false;
       autoSkipOutro = prefs.getBool(_autoSkipOutroKey) ?? false;
@@ -179,11 +199,11 @@ class LibraryStore extends ChangeNotifier {
       seekSeconds = prefs.getInt(_seekKey) ?? 10;
       final size = prefs.getString(_subtitleSizeKey);
       if (subtitleSizes.containsKey(size)) subtitleSize = size!;
-      subtitleBox = prefs.getBool(_subtitleBoxKey) ?? true;
+      subtitleBox = prefs.getBool(_subtitleBoxKey) ?? false;
       showIntro = prefs.getBool(_introKey) ?? true;
-      episodeAlerts = prefs.getBool(_alertsKey) ?? false;
+      episodeAlerts = prefs.getBool(episodeAlertsKey) ?? false;
     } catch (e) {
-      // Start with an empty library rather than not at all
+      debugPrint('could not load settings: $e');
     }
     notifyListeners();
   }
@@ -311,9 +331,7 @@ class LibraryStore extends ChangeNotifier {
     'exportedAt': DateTime.now().toUtc().toIso8601String(),
     'favourites': [for (final t in _favourites) t.toJson()],
     'history': {for (final e in _history.entries) e.key: e.value.toJson()},
-    'sources': {
-      for (final e in _sources.entries) '${e.key}': e.value.toJson(),
-    },
+    'sources': {for (final e in _sources.entries) '${e.key}': e.value.toJson()},
   };
 
   /// Merges a backup from [exportData] into the library: the newer progress
@@ -323,32 +341,41 @@ class LibraryStore extends ChangeNotifier {
     if (data['app'] != 'anigen' || data['version'] is! int) {
       throw const FormatException('not an anigen backup');
     }
+    final history = {
+      for (final e
+          in (data['history'] as Map<String, dynamic>? ?? const {}).entries)
+        e.key: HistoryEntry.fromJson(e.value as Map<String, dynamic>),
+    };
+    final titles = [
+      for (final raw in data['favourites'] as List? ?? const [])
+        LibraryTitle.fromJson(raw as Map<String, dynamic>),
+    ];
+    final sources = {
+      for (final e
+          in (data['sources'] as Map<String, dynamic>? ?? const {}).entries)
+        int.parse(e.key): LibraryTitle.fromJson(
+          e.value as Map<String, dynamic>,
+        ),
+    };
+
     var shows = 0;
     var favourites = 0;
-    final history = data['history'] as Map<String, dynamic>? ?? const {};
     for (final e in history.entries) {
-      final entry = HistoryEntry.fromJson(e.value as Map<String, dynamic>);
+      final entry = e.value;
       final current = _history[e.key];
       if (current == null || entry.updatedAt > current.updatedAt) {
         _history[e.key] = entry;
         shows++;
       }
     }
-    for (final raw in data['favourites'] as List? ?? const []) {
-      final title = LibraryTitle.fromJson(raw as Map<String, dynamic>);
+    for (final title in titles) {
       if (_indexOf(title) == -1) {
         _favourites.add(title);
         favourites++;
       }
     }
-    final sources = data['sources'] as Map<String, dynamic>? ?? const {};
     for (final e in sources.entries) {
-      final id = int.tryParse(e.key);
-      if (id == null) continue;
-      _sources.putIfAbsent(
-        id,
-        () => LibraryTitle.fromJson(e.value as Map<String, dynamic>),
-      );
+      _sources.putIfAbsent(e.key, () => e.value);
     }
     _saveHistory();
     _saveFavourites();
@@ -422,9 +449,10 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setEpisodeAlerts(bool value) {
+  Future<void> setEpisodeAlerts(bool value) async {
     episodeAlerts = value;
-    _prefs?.setBool(_alertsKey, value);
+    final saving = _prefs?.setBool(episodeAlertsKey, value);
     notifyListeners();
+    await saving;
   }
 }

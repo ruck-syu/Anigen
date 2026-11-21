@@ -333,6 +333,14 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   }
 
   @override
+  void didUpdateWidget(covariant _HeroCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_page >= widget.items.length && widget.items.isNotEmpty) {
+      _page = widget.items.length - 1;
+    }
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
     _controller.dispose();
@@ -343,7 +351,9 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     _timer?.cancel();
     _timer = Timer.periodic(_interval, (_) {
       // Not while another tab or the player covers home.
-      if (!mounted || !TickerMode.valuesOf(context).enabled) return;
+      if (!mounted || !TickerMode.getValuesNotifier(context).value.enabled) {
+        return;
+      }
       if (!_controller.hasClients || widget.items.length < 2) return;
       final next = (_page + 1) % widget.items.length;
       _controller.animateToPage(
@@ -538,8 +548,11 @@ class _Hero extends StatelessWidget {
         .map((g) => g.toLowerCase())
         .join('  •  ');
 
-    final buttons = Row(
-      mainAxisSize: MainAxisSize.min,
+    final buttons = Wrap(
+      alignment: wide ? WrapAlignment.start : WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         FilledButton.icon(
           style: FilledButton.styleFrom(
@@ -557,7 +570,6 @@ class _Hero extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
-        const SizedBox(width: 10),
         FilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: Colors.white.withValues(alpha: 0.2),
@@ -571,7 +583,6 @@ class _Hero extends StatelessWidget {
           icon: Icon(favourite ? Icons.favorite : Icons.favorite_border),
           label: const Text('favourite'),
         ),
-        const SizedBox(width: 4),
         IconButton(
           tooltip: 'info',
           icon: const Icon(Icons.info_outline, color: Colors.white),

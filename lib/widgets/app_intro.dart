@@ -22,82 +22,111 @@ class AppIntro extends StatefulWidget {
 
 class _AppIntroState extends State<AppIntro>
     with SingleTickerProviderStateMixin {
-  late final _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2600),
-  );
-
-  late final _appear = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0, 0.1, curve: Curves.easeOut),
-  );
-  late final _turn = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.16, 0.42, curve: Curves.easeInOutBack),
-  );
-  late final _slide = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.42, 0.68, curve: Curves.easeOutCubic),
-  );
-  late final _glow = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.5, 0.82, curve: Curves.easeInOut),
-  );
-  late final _exit = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.82, 1, curve: Curves.easeInCubic),
-  );
+  AnimationController? _controller;
+  late final CurvedAnimation _appear;
+  late final CurvedAnimation _turn;
+  late final CurvedAnimation _slide;
+  late final CurvedAnimation _glow;
+  late final CurvedAnimation _exit;
+  Wordmark? _wordmark;
+  double? _logoSize;
 
   bool _done = false;
-  bool _started = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
+    if (_done || _controller != null) return;
     // Skipped when turned off in settings or the system asks for less motion
     if (!LibraryStore.instance.showIntro ||
         MediaQuery.disableAnimationsOf(context)) {
       _done = true;
       return;
     }
-    _controller.forward().whenComplete(() {
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    );
+    _appear = CurvedAnimation(
+      parent: controller,
+      curve: const Interval(0, 0.1, curve: Curves.easeOut),
+    );
+    _turn = CurvedAnimation(
+      parent: controller,
+      curve: const Interval(0.16, 0.42, curve: Curves.easeInOutBack),
+    );
+    _slide = CurvedAnimation(
+      parent: controller,
+      curve: const Interval(0.42, 0.68, curve: Curves.easeOutCubic),
+    );
+    _glow = CurvedAnimation(
+      parent: controller,
+      curve: const Interval(0.5, 0.82, curve: Curves.easeInOut),
+    );
+    _exit = CurvedAnimation(
+      parent: controller,
+      curve: const Interval(0.82, 1, curve: Curves.easeInCubic),
+    );
+    _controller = controller;
+    controller.forward().whenComplete(() {
       if (mounted) setState(() => _done = true);
     });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _wordmark?.dispose();
+    final controller = _controller;
+    if (controller != null) {
+      _appear.dispose();
+      _turn.dispose();
+      _slide.dispose();
+      _glow.dispose();
+      _exit.dispose();
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Wordmark _wordmarkFor(BuildContext context) {
     final red = Theme.of(context).colorScheme.primary;
     // Same proportions as AnigenLogo
     final logoSize = (MediaQuery.sizeOf(context).shortestSide * 0.14).clamp(
       40.0,
       96.0,
     );
-    final wordmark = Wordmark(
-      fontSize: logoSize * 1.4,
-      letterSpacing: logoSize * 0.06,
-      color: red,
-    );
+    if (_logoSize != logoSize || _wordmark?.color != red) {
+      _wordmark?.dispose();
+      _wordmark = Wordmark(
+        fontSize: logoSize * 1.4,
+        letterSpacing: logoSize * 0.06,
+        color: red,
+      );
+      _logoSize = logoSize;
+    }
+    return _wordmark!;
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final wordmark = _done ? null : _wordmarkFor(context);
+    if (wordmark == null) {
+      _wordmark?.dispose();
+      _wordmark = null;
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
         // Stays in the same slot when the intro goes, so it keeps its state
         widget.child,
         // Opaque, so taps don't reach the app until it's showing
-        if (!_done)
+        if (wordmark != null)
           AnimatedBuilder(
-            animation: _controller,
+            animation: _controller!,
             builder: (context, _) {
               final exit = _exit.value;
+              final logoSize = _logoSize!;
+              final red = wordmark.color;
               return Opacity(
                 opacity: 1 - exit,
                 child: ColoredBox(

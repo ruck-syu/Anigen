@@ -67,8 +67,10 @@ class _TitleScreenState extends State<TitleScreen> {
         // The page still works from the title we were given
       }
     }
+    if (!mounted) return;
     if (_anilistId != null) _loadSeasons(_anilistId!);
     await _resolveSource();
+    if (!mounted) return;
     if (anilistId != null || malId != null) {
       _loadRecommendations(anilistId: anilistId, malId: malId);
     }
@@ -98,6 +100,7 @@ class _TitleScreenState extends State<TitleScreen> {
   }
 
   Future<void> _resolveSource() async {
+    if (!mounted) return;
     setState(() {
       _sourceError = null;
       _episodes = null;
@@ -261,6 +264,7 @@ class _TitleScreenState extends State<TitleScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (context) => _TrackingSheet(
         title: _title,
@@ -935,6 +939,7 @@ class _TrackingSheetState extends State<_TrackingSheet> {
   late DateTime? _startedAt = widget.entry?.startedAt;
   late DateTime? _completedAt = widget.entry?.completedAt;
   bool _saving = false;
+  String? _error;
 
   int? get _total => widget.totalEpisodes;
 
@@ -966,19 +971,27 @@ class _TrackingSheetState extends State<_TrackingSheet> {
   }
 
   Future<void> _pickDate(bool started) async {
-    final current = started ? _startedAt : _completedAt;
+    final today = DateUtils.dateOnly(DateTime.now());
+    final firstDate = DateTime(1940);
+    final lastDate = DateUtils.addDaysToDate(today, 365);
+    var initialDate = (started ? _startedAt : _completedAt) ?? today;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(lastDate)) initialDate = lastDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: current ?? DateTime.now(),
-      firstDate: DateTime(1940),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
-    if (picked == null) return;
+    if (!mounted || picked == null) return;
     setState(() => started ? _startedAt = picked : _completedAt = picked);
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     final account = AniListAccount.instance;
     final ok = await account.saveEntry(
       widget.title,
@@ -989,30 +1002,35 @@ class _TrackingSheetState extends State<_TrackingSheet> {
       completedAt: _completedAt,
     );
     if (!mounted) return;
-    setState(() => _saving = false);
     if (ok) {
       Navigator.of(context).pop();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(account.error ?? 'couldn\'t save to anilist')),
-      );
+      setState(() {
+        _saving = false;
+        _error = account.error ?? 'couldn\'t save to anilist';
+      });
     }
   }
 
   Future<void> _remove() async {
     final entry = widget.entry;
-    if (entry == null || !await confirmAniListRemoval(context, entry)) return;
-    setState(() => _saving = true);
+    if (entry == null) return;
+    final confirmed = await confirmAniListRemoval(context, entry);
+    if (!mounted || !confirmed || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     final account = AniListAccount.instance;
     final ok = await account.deleteEntry(widget.title);
     if (!mounted) return;
-    setState(() => _saving = false);
     if (ok) {
       Navigator.of(context).pop();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(account.error ?? 'couldn\'t remove it')),
-      );
+      setState(() {
+        _saving = false;
+        _error = account.error ?? 'couldn\'t remove it';
+      });
     }
   }
 
@@ -1130,6 +1148,15 @@ class _TrackingSheetState extends State<_TrackingSheet> {
                 dateField('finished', _completedAt, false),
               ],
             ),
+            if (_error case final error?) ...[
+              const SizedBox(height: 12),
+              Text(
+                error,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             Row(
               children: [
@@ -1401,6 +1428,7 @@ class _SourcePickerState extends State<_SourcePicker> {
   late final _controller = TextEditingController(text: widget.initialQuery);
   List<Anime>? _results;
   String? _error;
+  int _searchId = 0;
 
   @override
   void initState() {
@@ -1415,15 +1443,16 @@ class _SourcePickerState extends State<_SourcePicker> {
   }
 
   Future<void> _search() async {
+    final id = ++_searchId;
     setState(() {
       _results = null;
       _error = null;
     });
     try {
       final results = await AnimeProvider().search(_controller.text);
-      if (mounted) setState(() => _results = results);
+      if (mounted && id == _searchId) setState(() => _results = results);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted && id == _searchId) setState(() => _error = e.toString());
     }
   }
 

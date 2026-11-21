@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -7,26 +6,14 @@ import 'package:media_kit/media_kit.dart';
 import 'package:anigen/screens/home_screen.dart';
 import 'package:anigen/providers/scraper_config_store.dart';
 import 'package:anigen/services/anilist_account.dart';
+import 'package:anigen/services/app_update.dart';
 import 'package:anigen/services/episode_alerts.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/app_intro.dart';
 
-// Custom HTTP client to handle certificate issues on Windows
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-  }
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-
-  // Fix certificate verification issues on Windows
-  HttpOverrides.global = MyHttpOverrides();
 
   // Pick up scraper fixes published in the repo without a new build
   ScraperConfigStore.refresh();
@@ -61,10 +48,22 @@ void main() async {
   );
 
   runApp(const AnigenApp());
+  if (AppUpdate.isSupported) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdate.onInstallFailed = (message) {
+        AnigenApp._messengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('update failed: $message')),
+        );
+      };
+      AppUpdate.listenForInstallStatus();
+    });
+  }
 }
 
 class AnigenApp extends StatelessWidget {
   const AnigenApp({super.key});
+
+  static final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   /// Bundled in assets/fonts, see pubspec.yaml.
   static const _font = 'JetBrainsMono';
@@ -83,6 +82,7 @@ class AnigenApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'Anigen',
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       scrollBehavior: const _AppScrollBehavior(),
       builder: (context, child) => AppIntro(child: child!),
