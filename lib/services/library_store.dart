@@ -145,7 +145,7 @@ class LibraryStore extends ChangeNotifier {
   bool resume = true;
   int seekSeconds = 10;
   String subtitleSize = 'medium';
-  bool subtitleBox = true;
+  bool subtitleBox = false;
   bool showIntro = true;
   bool episodeAlerts = false;
 
@@ -179,7 +179,7 @@ class LibraryStore extends ChangeNotifier {
       seekSeconds = prefs.getInt(_seekKey) ?? 10;
       final size = prefs.getString(_subtitleSizeKey);
       if (subtitleSizes.containsKey(size)) subtitleSize = size!;
-      subtitleBox = prefs.getBool(_subtitleBoxKey) ?? true;
+      subtitleBox = prefs.getBool(_subtitleBoxKey) ?? false;
       showIntro = prefs.getBool(_introKey) ?? true;
       episodeAlerts = prefs.getBool(episodeAlertsKey) ?? false;
     } catch (e) {
