@@ -1,5 +1,7 @@
+import 'dart:io' show Platform;
 import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:anigen/models/anime.dart';
 import 'package:anigen/screens/title_screen.dart';
@@ -430,9 +432,27 @@ class _PlayerVideoState extends State<_PlayerVideo> {
           controller: playback.video,
           controls: widget.expanded ? _controls : NoVideoControls,
           subtitleViewConfiguration: _subtitles,
+          // media_kit's Windows fullscreen keeps the title bar on a maximized
+          // window; the runner's own handles that
+          onEnterFullscreen: Platform.isWindows
+              ? () => _setWindowsFullscreen(true)
+              : defaultEnterNativeFullscreen,
+          onExitFullscreen: Platform.isWindows
+              ? () => _setWindowsFullscreen(false)
+              : defaultExitNativeFullscreen,
         ),
       ),
     );
+  }
+
+  static const _window = MethodChannel('anigen/window');
+
+  static Future<void> _setWindowsFullscreen(bool fullscreen) async {
+    try {
+      await _window.invokeMethod('setFullscreen', fullscreen);
+    } catch (e) {
+      debugPrint('fullscreen failed: $e');
+    }
   }
 
   static Widget _controls(VideoState state) {
