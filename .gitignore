@@ -46,3 +46,7 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+# Local macOS signing (see macos/Runner/Configs/Local.xcconfig.example)
+macos/Runner/Configs/Local.xcconfig
+# Signing certificate made by scripts/macos-signing-cert.sh
+anigen-signing/

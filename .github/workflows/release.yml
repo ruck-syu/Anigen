@@ -230,7 +230,7 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
-      # Universal (Apple silicon and Intel), signed ad hoc
+      # Universal (Apple silicon and Intel); signed ad hoc here, re-signed below
       - name: Build app
         run: >-
           flutter build macos --release
@@ -238,11 +238,23 @@ jobs:
           --build-number=${{ env.CODE }}
           --dart-define=APP_VERSION=$VERSION
 
+      # The same certificate every release keeps the app's identity stable, so
+      # macOS doesn't ask signed-in users for keychain access after updates.
+      # Make it with scripts/macos-signing-cert.sh. Without the secrets the
+      # build stays signed ad hoc.
       - name: Build disk image
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
           mkdir -p dmg dist
           cp -R build/macos/Build/Products/Release/anigen.app dmg/Anigen.app
           ln -s /Applications dmg/Applications
+          if [[ -n $MACOS_CERTIFICATE ]]; then
+            scripts/macos-sign.sh dmg/Anigen.app
+          else
+            echo "::warning::MACOS_CERTIFICATE isn't set; the app is signed ad hoc and users will see keychain prompts after updates"
+          fi
           codesign --verify --deep --strict dmg/Anigen.app
           hdiutil create -volname Anigen -srcfolder dmg -ov -format UDZO \
             "dist/Anigen-v$VERSION-macos.dmg"

@@ -1,0 +1,11 @@
+// Copy to Local.xcconfig (ignored by git) to sign local builds with the
+// release certificate instead of ad hoc. The signature then stays the same
+// between builds, so macOS stops asking for keychain access on every rebuild.
+//
+// One-time setup on a new Mac, with the folder made by
+// scripts/macos-signing-cert.sh (kept outside the repo):
+//   security import anigen-signing.p12 -k ~/Library/Keychains/login.keychain-db \
+//     -P "$(cat password.txt)" -T /usr/bin/codesign
+//   security add-trusted-cert -r trustRoot -p codeSign \
+//     -k ~/Library/Keychains/login.keychain-db cert.pem
+CODE_SIGN_IDENTITY = Anigen Self-Signed
