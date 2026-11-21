@@ -71,7 +71,7 @@ Future<bool> confirmAniListRemoval(
 }
 
 /// The wordmark.
-class AnigenLogo extends StatelessWidget {
+class AnigenLogo extends StatefulWidget {
   final double size;
 
   /// A dark halo, so it reads over bright artwork.
@@ -88,20 +88,46 @@ class AnigenLogo extends StatelessWidget {
   });
 
   @override
+  State<AnigenLogo> createState() => _AnigenLogoState();
+}
+
+class _AnigenLogoState extends State<AnigenLogo> {
+  (double, Color, bool, bool)? _style;
+  late Wordmark _wordmark;
+
+  @override
+  void dispose() {
+    if (_style != null) _wordmark.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Bebas Neue is condensed, so it's drawn larger to match the old width.
-    // The A is the app icon's, drawn rather than typed.
-    final wordmark = Wordmark(
-      fontSize: size * 1.4,
-      letterSpacing: size * 0.06,
-      color: Theme.of(context).colorScheme.primary,
-      shadow: shadow,
+    final style = (
+      widget.size,
+      Theme.of(context).colorScheme.primary,
+      widget.shadow,
+      widget.markOnly,
     );
+    if (style != _style) {
+      if (_style != null) _wordmark.dispose();
+      final (size, color, shadow, markOnly) = style;
+      // Bebas Neue is condensed, so it's drawn larger to match the old width.
+      // The A is the app icon's, drawn rather than typed.
+      _wordmark = Wordmark(
+        fontSize: size * 1.4,
+        letterSpacing: size * 0.06,
+        color: color,
+        shadow: shadow,
+        markOnly: markOnly,
+      );
+      _style = style;
+    }
     return Semantics(
       label: 'Anigen',
       child: CustomPaint(
-        size: markOnly ? wordmark.markSize : wordmark.size,
-        painter: WordmarkPainter(wordmark: wordmark, markOnly: markOnly),
+        size: _wordmark.size,
+        painter: WordmarkPainter(wordmark: _wordmark),
       ),
     );
   }

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// the A sized to the capitals. Shared by [AnigenLogo] and the intro.
 class Wordmark {
   final Color color;
-  final TextPainter text;
+  final TextPainter? _text;
 
   /// Bebas Neue's capitals are 0.7 of its size
   final double capHeight;
@@ -15,27 +15,33 @@ class Wordmark {
   /// A dark halo, so it reads over bright artwork.
   final bool shadow;
 
+  /// Only the A, as on the app icon.
+  final bool markOnly;
+
   Wordmark({
     required double fontSize,
     required double letterSpacing,
     required this.color,
     this.shadow = false,
+    this.markOnly = false,
   }) : capHeight = fontSize * 0.7,
        gap = fontSize * 0.06 + letterSpacing,
-       text = TextPainter(
-         text: TextSpan(
-           text: 'NIGEN',
-           style: TextStyle(
-             fontFamily: 'BebasNeue',
-             fontSize: fontSize,
-             letterSpacing: letterSpacing,
-             height: 1,
-             color: color,
-             shadows: shadow ? _shadows : null,
-           ),
-         ),
-         textDirection: TextDirection.ltr,
-       )..layout();
+       _text = markOnly
+           ? null
+           : (TextPainter(
+               text: TextSpan(
+                 text: 'NIGEN',
+                 style: TextStyle(
+                   fontFamily: 'BebasNeue',
+                   fontSize: fontSize,
+                   letterSpacing: letterSpacing,
+                   height: 1,
+                   color: color,
+                   shadows: shadow ? _shadows : null,
+                 ),
+               ),
+               textDirection: TextDirection.ltr,
+             )..layout());
 
   static const _shadows = [
     Shadow(color: Colors.black, blurRadius: 2),
@@ -46,10 +52,14 @@ class Wordmark {
   double get unit => capHeight / 40.5;
   double get aWidth => 37 * unit;
 
-  Size get size => Size(aWidth + gap + text.width, text.height);
+  Size get size {
+    final text = _text;
+    return text == null
+        ? Size(capHeight, aWidth)
+        : Size(aWidth + gap + text.width, text.height);
+  }
 
-  /// Just the A, lying on its side as on the icon.
-  Size get markSize => Size(40.5 * unit, aWidth);
+  void dispose() => _text?.dispose();
 }
 
 class WordmarkPainter extends CustomPainter {
@@ -62,21 +72,18 @@ class WordmarkPainter extends CustomPainter {
   /// 0 hidden behind the A, 1 in place.
   final double slide;
 
-  /// Only the A, as on the icon, filling [Wordmark.markSize].
-  final bool markOnly;
-
   WordmarkPainter({
     required this.wordmark,
     this.opacity = 1,
     this.turn = 1,
     this.slide = 1,
-    this.markOnly = false,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final w = wordmark;
-    if (markOnly) {
+    final text = w._text;
+    if (text == null) {
       canvas.save();
       canvas.translate(size.width / 2, size.height / 2);
       canvas.rotate(-math.pi / 2);
@@ -100,14 +107,14 @@ class WordmarkPainter extends CustomPainter {
 
     // NIGEN, slid out from behind the A's right edge
     if (slide <= 0) return;
-    final baseline = w.text.computeDistanceToActualBaseline(
+    final baseline = text.computeDistanceToActualBaseline(
       TextBaseline.alphabetic,
     );
     // Capitals centred on the A
     final top = (size.height - w.capHeight) / 2 - (baseline - w.capHeight);
-    final x = aRight + w.gap - (w.text.width + w.gap) * (1 - slide);
+    final x = aRight + w.gap - (text.width + w.gap) * (1 - slide);
     if (slide >= 1) {
-      w.text.paint(canvas, Offset(x, top));
+      text.paint(canvas, Offset(x, top));
       return;
     }
     canvas.save();
@@ -117,7 +124,7 @@ class WordmarkPainter extends CustomPainter {
       Paint()
         ..color = Colors.black.withValues(alpha: (slide * 2.5).clamp(0, 1)),
     );
-    w.text.paint(canvas, Offset(x, top));
+    text.paint(canvas, Offset(x, top));
     canvas.restore();
     canvas.restore();
   }
@@ -161,9 +168,13 @@ class WordmarkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(WordmarkPainter old) =>
-      old.wordmark != wordmark ||
+      old.wordmark.color != wordmark.color ||
+      old.wordmark.capHeight != wordmark.capHeight ||
+      old.wordmark.shadow != wordmark.shadow ||
+      old.wordmark.markOnly != wordmark.markOnly ||
       old.opacity != opacity ||
-      old.turn != turn ||
-      old.slide != slide ||
-      old.markOnly != markOnly;
+      (!wordmark.markOnly &&
+          (old.wordmark.gap != wordmark.gap ||
+              old.turn != turn ||
+              old.slide != slide));
 }
