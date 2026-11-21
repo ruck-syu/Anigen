@@ -232,7 +232,8 @@ List<Widget> _stats(BuildContext context, double padding) {
           final columns = constraints.maxWidth >= 600 ? 6 : 3;
           const spacing = 8.0;
           final tileWidth =
-              (constraints.maxWidth - spacing * (columns - 1)) / columns;
+              ((constraints.maxWidth - spacing * (columns - 1)) / columns)
+                  .floorToDouble();
           return Wrap(
             spacing: spacing,
             runSpacing: spacing,
@@ -306,7 +307,8 @@ List<Widget> _localStats(BuildContext context, double padding) {
           const spacing = 8.0;
           final columns = constraints.maxWidth >= 600 ? 4 : 2;
           final tileWidth =
-              (constraints.maxWidth - spacing * (columns - 1)) / columns;
+              ((constraints.maxWidth - spacing * (columns - 1)) / columns)
+                  .floorToDouble();
           return Wrap(
             spacing: spacing,
             runSpacing: spacing,
