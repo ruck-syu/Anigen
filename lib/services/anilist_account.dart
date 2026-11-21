@@ -92,12 +92,16 @@ class AniListAccount extends ChangeNotifier {
   bool needsReconnect = false;
   bool isBusy = false;
   String? error;
+  bool _hasLoaded = false;
+  bool _hasSynced = false;
 
   /// mediaId -> your entry, from the last sync.
   final Map<int, AniListEntry> _entries = {};
 
   bool get isConfigured => clientId.isNotEmpty;
   bool get isSignedIn => _client.accessToken != null;
+  bool get hasLoaded => _hasLoaded;
+  bool get hasSynced => _hasSynced;
 
   AniListEntry? entryFor(int? mediaId) =>
       mediaId == null ? null : _entries[mediaId];
@@ -132,6 +136,8 @@ class AniListAccount extends ChangeNotifier {
       sync();
     } catch (e) {
       debugPrint('anilist: $e');
+    } finally {
+      _hasLoaded = true;
     }
   }
 
@@ -163,6 +169,7 @@ class AniListAccount extends ChangeNotifier {
       );
       _client.accessToken = token;
       _client.clearCache();
+      _hasSynced = false;
       needsReconnect = false;
       error = null;
       _setBusy(false);
@@ -186,18 +193,22 @@ class AniListAccount extends ChangeNotifier {
     expiresAt = null;
     needsReconnect = false;
     error = null;
+    _hasSynced = false;
     _entries.clear();
     notifyListeners();
   }
 
   /// Pulls your AniList anime list.
   Future<void> sync() async {
-    if (!isSignedIn || isBusy) return;
+    final token = _client.accessToken;
+    if (token == null || isBusy) return;
     _setBusy(true);
     try {
       final viewer =
           (await _client.request(_viewerQuery, cacheable: false))['Viewer']
               as Map<String, dynamic>;
+      // Signed out while the request was in flight
+      if (_client.accessToken != token) return;
       userName = viewer['name'] as String?;
       avatar =
           (viewer['avatar'] as Map<String, dynamic>?)?['medium'] as String?;
@@ -210,6 +221,7 @@ class AniListAccount extends ChangeNotifier {
         variables: {'userId': viewer['id']},
         cacheable: false,
       );
+      if (_client.accessToken != token) return;
       final lists =
           (data['MediaListCollection'] as Map<String, dynamic>?)?['lists']
               as List? ??
@@ -224,11 +236,13 @@ class AniListAccount extends ChangeNotifier {
           }
         }
       }
+      _hasSynced = true;
       error = null;
     } catch (e) {
       _handleError(e);
+    } finally {
+      _setBusy(false);
     }
-    _setBusy(false);
   }
 
   /// Adds or edits your entry for [title]. Dates left null are cleared.
@@ -429,6 +443,7 @@ class AniListAccount extends ChangeNotifier {
   void _expire() {
     needsReconnect = true;
     _client.accessToken = null;
+    _hasSynced = false;
     _entries.clear();
     notifyListeners();
   }

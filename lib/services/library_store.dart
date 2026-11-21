@@ -118,7 +118,7 @@ class LibraryStore extends ChangeNotifier {
   static const _subtitleSizeKey = 'settings_subtitle_size';
   static const _subtitleBoxKey = 'settings_subtitle_box';
   static const _introKey = 'settings_intro';
-  static const _alertsKey = 'settings_episode_alerts';
+  static const episodeAlertsKey = 'settings_episode_alerts';
 
   /// Double-tap seek lengths offered in settings.
   static const seekChoices = [5, 10, 15, 30];
@@ -181,7 +181,7 @@ class LibraryStore extends ChangeNotifier {
       if (subtitleSizes.containsKey(size)) subtitleSize = size!;
       subtitleBox = prefs.getBool(_subtitleBoxKey) ?? true;
       showIntro = prefs.getBool(_introKey) ?? true;
-      episodeAlerts = prefs.getBool(_alertsKey) ?? false;
+      episodeAlerts = prefs.getBool(episodeAlertsKey) ?? false;
     } catch (e) {
       // Start with an empty library rather than not at all
     }
@@ -422,9 +422,10 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setEpisodeAlerts(bool value) {
+  Future<void> setEpisodeAlerts(bool value) async {
     episodeAlerts = value;
-    _prefs?.setBool(_alertsKey, value);
+    final saving = _prefs?.setBool(episodeAlertsKey, value);
     notifyListeners();
+    await saving;
   }
 }
