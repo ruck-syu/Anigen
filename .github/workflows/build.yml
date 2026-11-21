@@ -1,0 +1,116 @@
+name: Build
+
+# Checks that every platform still compiles before a change reaches main.
+# Builds only: nothing is signed, uploaded or released (that's release.yml).
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'linux/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with .fvmrc and release.yml
+  FLUTTER_VERSION: '3.44.2'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      # The AniList provider tests call the live API, so only the offline ones
+      # run here
+      - name: Test
+        run: flutter test test/source_matcher_test.dart
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      # Debug signing is enough to prove it compiles
+      - name: Build APK
+        run: flutter build apk --debug --target-platform=android-arm64
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      # Release mode, like release.yml, so the runner compiles with the same
+      # warnings-as-errors settings
+      - name: Build app
+        run: flutter build windows --release
+
+  macos:
+    # Pinned like release.yml: Xcode 27's lipo breaks Flutter 3.44's
+    # universal-binary check
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      # Signed ad hoc; the release certificate is only used by release.yml
+      - name: Build app
+        run: flutter build macos --release
