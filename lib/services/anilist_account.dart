@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
@@ -129,7 +130,13 @@ class AniListAccount extends ChangeNotifier {
         return;
       }
       _client.accessToken = token;
-      userName = await _storage.read(key: _nameKey);
+      try {
+        final cachedName = await _storage.read(key: _nameKey);
+        if (_client.accessToken != token) return;
+        userName = cachedName;
+      } catch (e) {
+        debugPrint('anilist: couldn\'t read the cached user name: $e');
+      }
       notifyListeners();
       // Don't hold up startup on the network. Until this finishes, AniList
       // shows the copy of your AniList list from the last sync.
@@ -162,11 +169,8 @@ class AniListAccount extends ChangeNotifier {
       expiresAt = expiresIn == null
           ? null
           : DateTime.now().add(Duration(seconds: expiresIn));
-      await _storage.write(key: _tokenKey, value: token);
-      await _storage.write(
-        key: _expiresKey,
-        value: expiresAt?.millisecondsSinceEpoch.toString(),
-      );
+      await _save(_tokenKey, token);
+      await _save(_expiresKey, expiresAt?.millisecondsSinceEpoch.toString());
       _client.accessToken = token;
       _client.clearCache();
       _hasSynced = false;
@@ -179,6 +183,29 @@ class AniListAccount extends ChangeNotifier {
       final message = e.toString();
       error = message.contains('CANCELED') ? null : _clean(message);
       _setBusy(false);
+    }
+  }
+
+  /// Saves to the keychain. The plugin already replaces an entry it isn't
+  /// allowed to update (like one left by an ad hoc signed release), but an
+  /// entry it can't see still blocks the write as a duplicate, so drop that
+  /// one and retry. Any other failure (a locked keychain, a cancelled prompt)
+  /// is passed on rather than deleting a saved login.
+  Future<void> _save(String key, String? value) async {
+    if (value == null) {
+      await _storage.delete(key: key);
+      return;
+    }
+    try {
+      await _storage.write(key: key, value: value);
+    } on PlatformException catch (e) {
+      const errSecDuplicateItem = -25299;
+      if (defaultTargetPlatform != TargetPlatform.macOS ||
+          e.details != errSecDuplicateItem) {
+        rethrow;
+      }
+      await _storage.delete(key: key);
+      await _storage.write(key: key, value: value);
     }
   }
 
@@ -204,18 +231,24 @@ class AniListAccount extends ChangeNotifier {
     if (token == null || isBusy) return;
     _setBusy(true);
     try {
-      final viewer =
-          (await _client.request(_viewerQuery, cacheable: false))['Viewer']
-              as Map<String, dynamic>;
+      final viewerData = await _client.request(_viewerQuery, cacheable: false);
       // Signed out while the request was in flight
       if (_client.accessToken != token) return;
+      final viewer = viewerData['Viewer'] as Map<String, dynamic>;
       userName = viewer['name'] as String?;
       avatar =
           (viewer['avatar'] as Map<String, dynamic>?)?['medium'] as String?;
+      // Only a cache for the next launch; a keychain hiccup shouldn't stop
+      // the list from syncing
       if (userName != null) {
-        await _storage.write(key: _nameKey, value: userName);
+        try {
+          await _save(_nameKey, userName);
+        } catch (e) {
+          debugPrint('anilist: couldn\'t save the user name: $e');
+        }
       }
 
+      if (_client.accessToken != token) return;
       final data = await _client.request(
         _listQuery,
         variables: {'userId': viewer['id']},
@@ -239,7 +272,7 @@ class AniListAccount extends ChangeNotifier {
       _hasSynced = true;
       error = null;
     } catch (e) {
-      _handleError(e);
+      if (_client.accessToken == token) _handleError(e);
     } finally {
       _setBusy(false);
     }
