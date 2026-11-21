@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -11,22 +10,9 @@ import 'package:anigen/services/episode_alerts.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/app_intro.dart';
 
-// Custom HTTP client to handle certificate issues on Windows
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-  }
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-
-  // Fix certificate verification issues on Windows
-  HttpOverrides.global = MyHttpOverrides();
 
   // Pick up scraper fixes published in the repo without a new build
   ScraperConfigStore.refresh();
