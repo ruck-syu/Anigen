@@ -62,7 +62,7 @@ class PlaybackController extends ChangeNotifier {
   // Bumped on every load so late responses for an old episode are dropped
   int _request = 0;
   DateTime _lastSave = DateTime.fromMillisecondsSinceEpoch(0);
-  String? _autoSkipped;
+  final _autoSkipped = <String>{};
 
   bool get isActive => title != null;
 
@@ -122,8 +122,7 @@ class PlaybackController extends ChangeNotifier {
     final wanted = skip.type == 'op'
         ? library.autoSkipIntro
         : library.autoSkipOutro;
-    if (wanted && _autoSkipped != key) {
-      _autoSkipped = key;
+    if (wanted && _autoSkipped.add(key)) {
       player.seek(skip.end);
     }
   }
@@ -191,12 +190,15 @@ class PlaybackController extends ChangeNotifier {
     isLoading = true;
     error = null;
     skips = const [];
+    _autoSkipped.clear();
     subtitles = const [];
     subtitle = null;
+    _stream = const {};
     notifyListeners();
 
     try {
       await player.stop();
+      if (request != _request) return;
       final stream = await AnimeProvider().getStreamLink(
         title.animeId!,
         episode.number,
@@ -246,7 +248,9 @@ class PlaybackController extends ChangeNotifier {
                 fallback;
       if (subtitle != null) _loadSubtitle(subtitle!, stream, request);
       await player.setRate(rate);
+      if (request != _request) return;
       await player.play();
+      if (request != _request) return;
 
       isLoading = false;
       notifyListeners();
@@ -445,6 +449,10 @@ class PlaybackController extends ChangeNotifier {
     isLoading = false;
     error = null;
     skips = const [];
+    _autoSkipped.clear();
+    subtitles = const [];
+    subtitle = null;
+    _stream = const {};
     isExpanded = false;
     notifyListeners();
     await _player?.stop();
