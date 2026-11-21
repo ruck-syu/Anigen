@@ -40,16 +40,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadConfig();
     _measureCache();
-    AppUpdate.onInstallFailed = (message) {
-      if (!mounted) return;
-      _snack('update failed: $message');
-    };
-  }
-
-  @override
-  void dispose() {
-    AppUpdate.onInstallFailed = null;
-    super.dispose();
   }
 
   void _snack(String message) => ScaffoldMessenger.of(
@@ -101,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
+      barrierDismissible: false,
       builder: (context) => UpdateDialog(release: release!),
     );
   }

@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:anigen/screens/home_screen.dart';
 import 'package:anigen/providers/scraper_config_store.dart';
 import 'package:anigen/services/anilist_account.dart';
+import 'package:anigen/services/app_update.dart';
 import 'package:anigen/services/episode_alerts.dart';
 import 'package:anigen/services/library_store.dart';
 import 'package:anigen/widgets/app_intro.dart';
@@ -47,10 +48,22 @@ void main() async {
   );
 
   runApp(const AnigenApp());
+  if (AppUpdate.isSupported) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdate.onInstallFailed = (message) {
+        AnigenApp._messengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('update failed: $message')),
+        );
+      };
+      AppUpdate.listenForInstallStatus();
+    });
+  }
 }
 
 class AnigenApp extends StatelessWidget {
   const AnigenApp({super.key});
+
+  static final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   /// Bundled in assets/fonts, see pubspec.yaml.
   static const _font = 'JetBrainsMono';
@@ -69,6 +82,7 @@ class AnigenApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'Anigen',
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       scrollBehavior: const _AppScrollBehavior(),
       builder: (context, child) => AppIntro(child: child!),
